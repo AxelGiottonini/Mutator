@@ -1,0 +1,6 @@
+*.csv
+*.fasta
+*.database
+*.tar.gz
+logs/*
+models/*
