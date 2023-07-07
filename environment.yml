@@ -20,7 +20,7 @@ dependencies:
   - mmseqs2
   - pip:
     - ipykernel
-    - transformers
+    - adapter-transformers
     - matplotlib
     - seaborn
     - evaluate

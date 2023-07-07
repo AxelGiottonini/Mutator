@@ -1,13 +1,13 @@
 #!/bin/bash
 
-CUDA_VISIBLE_DEVICES=0 python ./src/train.py \
+CUDA_VISIBLE_DEVICES=0 python ./train.py \
     --model_name test \
-    --model_version 1.1 \
-    --learning_rate 0.000 \
-    --training_set "./data/train.50k.csv" \
-    --validation_set "./data/val.500.csv" \
+    --model_version 0.0 \
+    --learning_rate 0.0001 \
+    --training_set "./data/_test.csv" \
+    --validation_set "./data/_val.csv" \
     --max_length 400 \
-    --n_epochs 20 \
+    --n_epochs 5 \
     --batch_size 256 \
     --local_batch_size 16 \
     --num_workers 16 

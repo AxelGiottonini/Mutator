@@ -16,6 +16,7 @@ from torch.nn import CrossEntropyLoss, NLLLoss
 from torch.utils.data import Dataset as __Dataset__, DataLoader
 
 from transformers import AutoTokenizer, AutoModelForMaskedLM
+from transformers.adapters import PfeifferInvConfig
 
 torch.manual_seed(42)
 
@@ -29,6 +30,7 @@ def parse_args():
 
     parser.add_argument("--from_tokenizer", type=str, default="Rostlab/prot_bert_bfd", help="Path or Huggingface's repository of the model's tokenizer")
     parser.add_argument("--from_model", type=str, default="Rostlab/prot_bert_bfd", help="Path to repository containing the model's encoder and decoder")
+    parser.add_argument("--from_adapters", type=str, default=None, help="Path to repository containing the model's adapter, if None, the adapters are initialized")
     
     parser.add_argument("--learning_rate", type=float, required=True, help="Learning rate")
     parser.add_argument("--betas", type=str, default="(0.9, 0.999)", help="betas")
@@ -94,10 +96,10 @@ class Dataset(__Dataset__):
         
         df = pd.read_csv(path, header=None)
 
-        if (n_cols:=df.shape[1]) != 1:
-            raise ValueError(f"Expected a single column file, current file has {n_cols} columns.")
+        if (n_cols:=df.shape[1]) != 5:
+            raise ValueError(f"Expected a 5 columns file, current file has {n_cols} columns.")
 
-        df.columns = ["seq"]
+        df.rename(columns={4:'seq'}, inplace=True)
 
         if not min_length is None:
             df = df[df.apply(lambda row: min_length < len(row["seq"]), axis=1)]
@@ -147,6 +149,7 @@ def train(
     accumulation_steps = args["batch_size"] // args["local_batch_size"]
 
     metrics = {
+        "best_loss": float("inf"),
         "training/loss/step": [],
         "training/loss/mean": [],
         "validation/loss/mean": []
@@ -210,13 +213,25 @@ def train(
         str_epoch = f"EPOCH[{i_epoch}]" + "\n\t" + str_metrics + "\n\t" + str_duration
         logging.info(str_epoch)
 
-        if len(metrics['validation/loss/mean']) > 1 and metrics['validation/loss/mean'][-1] < min(metrics['validation/loss/mean'][:-1])*0.98:
-            model.save_pretrained(os.path.join(args["model_dir"], args["model_name"], args["model_version"], "best"))
+        if metrics['validation/loss/mean'][-1] < metrics["best_loss"]*0.98:
+            model.save_adapter(os.path.join(args["model_dir"], args["model_name"], args["model_version"], "best"), "thermo")
 
 def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args["from_tokenizer"])
     model = AutoModelForMaskedLM.from_pretrained(args["from_model"])
+
+    config = PfeifferInvConfig()
+    if args["from_adapters"] is None:
+        model.add_adapter("thermo", config=config)
+    else:
+        model.load_adapter(args["from_adapters"])
+    model.set_active_adapters("thermo")
+    model.train_adapter("thermo")
     
+    n_total_params = sum(p.numel() for p in model.parameters())
+    n_train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    logging.info(f"#total: {n_total_params}; #trainable: {n_train_params}")
+
     collate_fn = get_collate_fn(tokenizer, args)
 
     training_set = Dataset(args["training_set"], min_length=args["min_length"], max_length=args["max_length"])
@@ -253,7 +268,7 @@ def main(args):
     except KeyboardInterrupt:
         pass
 
-    model.save_pretrained(os.path.join(args["model_dir"], args["model_name"], args["model_version"], "final"))
+    model.save_adapter(os.path.join(args["model_dir"], args["model_name"], args["model_version"], "final"))
     sys.exit(0)
 
 if __name__ == "__main__":
