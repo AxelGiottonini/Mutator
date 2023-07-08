@@ -23,9 +23,8 @@ def crossover(allele_1, allele_2):
     return new_allele_1, new_allele_2
 
 def mutation(allele):
-    mutation = torch.normal(allele.mean(), allele.std(), size=allele.shape())
-    d_mutation = F.dropout(2*torch.randint(0, 2, size=allele.shape()) - 1, 0.98)
-    new_allele = allele + mutation * d_mutation
+    mutation = F.dropout(torch.normal(0, allele.std(), size=allele.shape()), 0.95)
+    new_allele = allele + mutation
     return new_allele
 
 class GeneticModel(nn.Module):
