@@ -1,5 +1,62 @@
+from copy import deepcopy
+
 import random
+
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+def crossover(allele_1, allele_2):
+    if not allele_1.shape == allele_2.shape:
+        raise ValueError(f"Cannot perform crossover with allele of shape {allele_1.shape} and allele of shape {allele_2.shape}.")
+
+    allele_shape = allele_1.shape
+
+    allele_1_flat = allele_1.flatten()
+    allele_2_flat = allele_2.flatten()
+
+    crossover_point = random.randint(1, len(allele_1_flat))
+
+    new_allele_1 = torch.cat([allele_1_flat[:crossover_point], allele_2_flat[crossover_point:]]).reshape(allele_shape)
+    new_allele_2 = torch.cat([allele_2_flat[:crossover_point], allele_1_flat[crossover_point:]]).reshape(allele_shape)
+
+    return new_allele_1, new_allele_2
+
+def mutation(allele):
+    mutation = torch.normal(allele.mean(), allele.std(), size=allele.shape())
+    d_mutation = F.dropout(2*torch.randint(0, 2, size=allele.shape()) - 1, 0.98)
+    new_allele = allele + mutation * d_mutation
+    return new_allele
+
+class GeneticModel(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def __add__(self, other):
+        return self.__cross_over__(other)
+    
+    def __cross_over__(self, other):
+        offspring_1 = deepcopy(self)
+        offspring_2 = deepcopy(other)
+
+        for locus_1, locus_2 in zip(offspring_1.parameters(), offspring_2.parameters()):
+            allele_1, allele_2 = crossover(locus_1.data, locus_2.data)
+            locus_1.data = nn.parameter.Parameter(allele_1)
+            locus_2.data = nn.parameter.Parameter(allele_2)
+
+        return [offspring_1, offspring_2]
+
+    def __invert__(self):
+        return self.__mutate__()
+    
+    def __mutate__(self):
+        offspring = deepcopy(self)
+
+        for locus in offspring.parameters():
+            allele = mutation(locus.data)
+            locus.data = nn.parameter.Parameter(allele)
+        
+        return offspring
 
 class GeneticAlgorithm():
     model = None
@@ -39,9 +96,14 @@ class GeneticAlgorithm():
 
         survivors = [self.population[i] for i in leaderboard[:-self.offspring_size]]
         offspring = []
-        for _ in range(self.offspring_size):
+
+        # Cross-Over
+        for _ in range(0, self.offspring_size, 2):
             el1, el2 = random.sample(survivors, 2)
-            offspring.append((~el1) + (~el2))
+            offspring.extend(el1 + el2)
+
+        # Mutation
+        offspring = [~el for el in offspring]
 
         self.population = survivors + offspring
 

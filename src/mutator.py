@@ -7,10 +7,10 @@ from torch.distributions.categorical import Categorical
 
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
-from .genetic_algorithm import GeneticAlgorithm
+from .genetic_algorithm import GeneticModel
 from .utils import no_grad
 
-class Mutator(nn.Module):
+class Mutator(GeneticModel):
     model = None
     tokenizer = None
 
@@ -76,15 +76,6 @@ class Mutator(nn.Module):
         out = type('',(object,), out)()
 
         return out
-
-    def __add__(self, other):
-        raise NotImplementedError()
-    
-    def __invert__(self):
-        return self.__mutate__()
-    
-    def __mutate__(self):
-        raise NotImplementedError()
 
     @classmethod
     def set_model(cls, model:AutoModelForMaskedLM):
