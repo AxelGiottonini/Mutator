@@ -18,7 +18,7 @@ class Mutator(nn.Module):
         super().__init__()
 
         if Mutator.model is None:
-            raise RuntimeError("Mutator model is undefined, please define a module using Mutator.set_model(model).")
+            raise RuntimeError("Mutator model is undefined, please define a model using Mutator.set_model(model).")
 
         if Mutator.tokenizer is None:
             raise RuntimeError("Mutator tokenizer is undefined, please define a tokenizer using Mutator.set_tokenizer(tokenizer).")
@@ -77,6 +77,15 @@ class Mutator(nn.Module):
 
         return out
 
+    def __add__(self, other):
+        raise NotImplementedError()
+    
+    def __invert__(self):
+        return self.__mutate__()
+    
+    def __mutate__(self):
+        raise NotImplementedError()
+
     @classmethod
     def set_model(cls, model:AutoModelForMaskedLM):
         cls.model = model
@@ -84,6 +93,3 @@ class Mutator(nn.Module):
     @classmethod
     def set_tokenizer(cls, tokenizer:AutoTokenizer):
         cls.tokenizer = tokenizer
-    
-class MutatorGA(GeneticAlgorithm):
-    pass
