@@ -1,3 +1,5 @@
+import typing
+
 from copy import deepcopy
 
 import random
@@ -22,12 +24,14 @@ def crossover(allele_1, allele_2):
 
     return new_allele_1, new_allele_2
 
-def mutation(allele):
-    mutation = F.dropout(torch.normal(0, allele.std(), size=allele.shape()), 0.95)
+def mutation(allele, mutation_rate):
+    mutation = F.dropout(torch.normal(0, allele.std(), size=allele.shape()), (1-mutation_rate))
     new_allele = allele + mutation
     return new_allele
 
 class GeneticModel(nn.Module):
+    mutation_rate = 0.05
+
     def __init__(self):
         super().__init__()
 
@@ -52,20 +56,29 @@ class GeneticModel(nn.Module):
         offspring = deepcopy(self)
 
         for locus in offspring.parameters():
-            allele = mutation(locus.data)
+            allele = mutation(locus.data, GeneticModel.mutation_rate)
             locus.data = nn.parameter.Parameter(allele)
         
         return offspring
+
+class GeneticAlgorithmOutput():
+    def __init__(
+        self,
+        outcome: typing.Optional[torch.Tensor]=None,
+        fitness: typing.Optional[torch.Tensor]=None
+    ):
+        self.outcome = outcome
+        self.fitness = fitness
 
 class GeneticAlgorithm():
     model = None
 
     def __init__(
         self, 
-        population_size,
-        offspring_size,
-        *args, 
-        **kwargs
+        population_size: int,
+        offspring_size: int,
+        *args: typing.Any, 
+        **kwargs: typing.Any
     ):
         if GeneticAlgorithm.model is None:
             raise RuntimeError("GeneticAlgorithm model is undefined, please define a model using GeneticAlgorithm.set_model(model).")        
@@ -76,18 +89,22 @@ class GeneticAlgorithm():
         self.population = [GeneticAlgorithm.model(args, kwargs) for _ in range(population_size)]
         self.fitness = torch.zeros(population_size)
 
-    def __call__(self, outcome_to_fitness, *args, **kwargs) :
-        _outcome = [el(args, kwargs) for el in self.population]
-        _fitness = outcome_to_fitness(_outcome)
+    def __call__(
+        self, 
+        outcome_to_fitness: typing.Callable, 
+        *args: typing.Any, 
+        **kwargs: typing.Any
+    ) -> GeneticAlgorithmOutput:
 
-        self.fitness += _fitness
+        outcome = [el(args, kwargs) for el in self.population]
+        fitness = outcome_to_fitness(outcome)
 
-        out = {
-            "outcome": _outcome,
-            "fitness": _fitness
-        }
-        out = type('',(object,), out)()
+        self.fitness += fitness
 
+        out = GeneticAlgorithmOutput(
+            outcome=outcome,
+            fitness=fitness
+        )
         return out
 
     def step(self):
