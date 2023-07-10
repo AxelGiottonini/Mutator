@@ -13,10 +13,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss, NLLLoss
-from torch.utils.data import Dataset as __Dataset__, DataLoader
+from torch.utils.data import DataLoader
 
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 from transformers.adapters import PfeifferInvConfig
+
+from src import Dataset, get_collate_fn
 
 torch.manual_seed(42)
 
@@ -84,54 +86,6 @@ def parse_args():
 
     return args
 
-class Dataset(__Dataset__):
-    def __init__(
-        self,
-        path: typing.Union[str, os.PathLike],
-        min_length: typing.Optional[int] = None,
-        max_length: typing.Optional[int] = None
-    ):
-        if not os.path.isfile(path):
-            raise FileNotFoundError()
-        
-        df = pd.read_csv(path, header=None)
-
-        if (n_cols:=df.shape[1]) != 5:
-            raise ValueError(f"Expected a 5 columns file, current file has {n_cols} columns.")
-
-        df.rename(columns={4:'seq'}, inplace=True)
-
-        if not min_length is None:
-            df = df[df.apply(lambda row: min_length < len(row["seq"]), axis=1)]
-        if not max_length is None:
-            df = df[df.apply(lambda row: max_length > len(row["seq"]), axis=1)]
-
-        self.df = df.reset_index(drop=True)
-
-    def __len__(self) -> int:
-        return self.df.shape[0]
-    
-    def __getitem__(
-        self, 
-        index: int
-    ):
-        return self.df.loc[index, "seq"]
-
-def get_collate_fn(tokenizer, args):
-    def collate_fn(seqs):
-        seqs = [' '.join(list(el)) for el in seqs]
-        tokens = tokenizer(seqs, return_tensors="pt", padding=True)
-        input_ids, attention_mask = tokens.input_ids, tokens.attention_mask
-
-        mask_token_mask = (torch.rand_like(input_ids, dtype=torch.float32) < args["p"]).int()
-        mask_token_mask = attention_mask * mask_token_mask
-
-        masked_input_ids = ((1-mask_token_mask)*input_ids) + mask_token_mask*tokenizer.mask_token_id
-
-        return masked_input_ids, attention_mask, input_ids, mask_token_mask
-
-    return collate_fn
-
 def train(
     tokenizer,
     model,
@@ -155,7 +109,7 @@ def train(
         "validation/loss/mean": []
     }
 
-    def step(input_ids, attention_mask, output_ids, mask_token_mask, model):
+    def step(input_ids, attention_mask, output_ids, masked_mask, model):
         out = model(
             input_ids = input_ids,
             attention_mask = attention_mask
@@ -165,7 +119,7 @@ def train(
         preds = F.log_softmax(logits, dim=-1)
         loss_fn = NLLLoss(reduction='none')
         mlkp_loss = loss_fn(preds, output_ids.flatten())
-        mlkp_loss = ((mask_token_mask.flatten() * mlkp_loss)).sum() / mask_token_mask.sum()
+        mlkp_loss = ((masked_mask.flatten() * mlkp_loss)).sum() / masked_mask.sum()
         return mlkp_loss
 
     for i_epoch in range(1, args["n_epochs"]+1):
@@ -180,9 +134,13 @@ def train(
         torch.cuda.empty_cache()
         
         for i_batch, batch in enumerate(training_dataloader):
-            input_ids, attention_mask, output_ids, mask_token_mask = [el.to(device) for el in batch]
-
-            mlkp_loss = step(input_ids, attention_mask, output_ids, mask_token_mask, model)
+            mlkp_loss = step(
+                input_ids=batch.masked_input_ids.to(device),
+                attention_mask=batch.attention_mask.to(device),
+                output_ids=batch.input_ids.to(device),
+                masked_mask=batch.masked_mask.to(device),
+                model=model
+            )
 
             (mlkp_loss / accumulation_steps).backward()
             if (i_batch + 1) % accumulation_steps == 0 or i_batch + 1 == len(training_dataloader):
@@ -199,9 +157,13 @@ def train(
         with torch.no_grad():
             
             for i_batch, batch in enumerate(validation_dataloader):
-                input_ids, attention_mask, output_ids, mask_token_mask = [el.to(device) for el in batch]
-
-                mlkp_loss = step(input_ids, attention_mask, output_ids, mask_token_mask, model)
+                mlkp_loss = step(
+                    input_ids=batch.masked_input_ids.to(device),
+                    attention_mask=batch.attention_mask.to(device),
+                    output_ids=batch.input_ids.to(device),
+                    masked_mask=batch.masked_mask.to(device),
+                    model=model
+                )
 
                 epoch_metrics["validation/loss"].append(mlkp_loss.item())
 
@@ -232,7 +194,7 @@ def main(args):
     n_train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     logging.info(f"#total: {n_total_params}; #trainable: {n_train_params}")
 
-    collate_fn = get_collate_fn(tokenizer, args)
+    collate_fn = get_collate_fn(tokenizer, mask=True, mask_rate=args["p"])
 
     training_set = Dataset(args["training_set"], min_length=args["min_length"], max_length=args["max_length"])
     validation_set = Dataset(args["validation_set"], min_length=args["min_length"], max_length=args["max_length"])
@@ -268,7 +230,7 @@ def main(args):
     except KeyboardInterrupt:
         pass
 
-    model.save_adapter(os.path.join(args["model_dir"], args["model_name"], args["model_version"], "final"))
+    model.save_adapter(os.path.join(args["model_dir"], args["model_name"], args["model_version"], "final"), "thermo")
     sys.exit(0)
 
 if __name__ == "__main__":
