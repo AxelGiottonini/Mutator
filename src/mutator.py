@@ -1,4 +1,5 @@
 import typing
+from collections.abc import Iterable
 
 import torch
 import torch.nn as nn
@@ -38,6 +39,16 @@ class MutatorOutput():
     @staticmethod
     def cat(*args, **kwargs):
         raise NotImplementedError()
+    
+    @classmethod
+    def to_fitness(cls, obj, p_coef=1, d_coef=0, *args, **kwargs):
+        if isinstance(obj, Iterable):
+            return torch.tensor([cls.to_fitness(el, p_coef, d_coef, *args, **kwargs) for el in obj])
+        
+        mutated_perplexity = obj.mutated_perplexity.mean()
+        cls_distance = obj.cls_distance.mean()
+        return p_coef * mutated_perplexity + d_coef * cls_distance
+
 
 class Mutator(GeneticModel):
     model = None
@@ -45,7 +56,7 @@ class Mutator(GeneticModel):
     n_mutations = None
     k = None
 
-    def __init__(self):
+    def __init__(self, *args:typing.Any, **kwargs:typing.Any):
         super().__init__()
 
         if Mutator.model is None:
@@ -70,7 +81,9 @@ class Mutator(GeneticModel):
         input_embeddings: typing.Optional[torch.Tensor]=None,
         input_cls: typing.Optional[torch.Tensor]=None,
         attention_mask: typing.Optional[torch.Tensor]=None,
-        mutator_output: typing.Optional[MutatorOutput]=None
+        mutator_output: typing.Optional[MutatorOutput]=None,
+        *args: typing.Any,
+        **kwargs: typing.Any
     ):
         if mutator_output is None:            
             if attention_mask is None:
@@ -131,11 +144,12 @@ class Mutator(GeneticModel):
         return out
 
     @classmethod
-    def configure(cls, model, tokenizer, n_mutations, k):
+    def configure(cls, model, tokenizer, n_mutations, k, mutation_rate):
         cls.set_model(model)
         cls.set_tokenizer(tokenizer)
         cls.set_n_mutations(n_mutations)
         cls.set_k(k)
+        cls.set_mutation_rate(mutation_rate)
 
     @classmethod
     def set_model(cls, model:AutoModelForMaskedLM):

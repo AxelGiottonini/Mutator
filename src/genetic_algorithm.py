@@ -25,7 +25,7 @@ def crossover(allele_1, allele_2):
     return new_allele_1, new_allele_2
 
 def mutation(allele, mutation_rate):
-    mutation = F.dropout(torch.normal(0, allele.std(), size=allele.shape()), (1-mutation_rate))
+    mutation = F.dropout(torch.normal(0, allele.std(), size=allele.shape), (1-mutation_rate))
     new_allele = allele + mutation
     return new_allele
 
@@ -48,6 +48,10 @@ class GeneticModel(nn.Module):
             locus_2.data = nn.parameter.Parameter(allele_2)
 
         return [offspring_1, offspring_2]
+    
+    @classmethod
+    def set_mutation_rate(cls, mutation_rate):
+        cls.mutation_rate = mutation_rate
 
     def __invert__(self):
         return self.__mutate__()
@@ -91,13 +95,13 @@ class GeneticAlgorithm():
 
     def __call__(
         self, 
-        outcome_to_fitness: typing.Callable, 
+        to_fitness: typing.Callable, 
         *args: typing.Any, 
         **kwargs: typing.Any
     ) -> GeneticAlgorithmOutput:
 
-        outcome = [el(args, kwargs) for el in self.population]
-        fitness = outcome_to_fitness(outcome)
+        outcome = [el(*args, **kwargs) for el in self.population]
+        fitness = to_fitness(outcome, *args, **kwargs)
 
         self.fitness += fitness
 
@@ -107,10 +111,18 @@ class GeneticAlgorithm():
         )
         return out
 
-    def step(self):
-        leaderboard = self.fitness.argsort()
+    def __len__(self):
+        return self.population_size
+    
+    def __getitem__(self, index):
+        return self.population[index]
 
-        survivors = [self.population[i] for i in leaderboard[:-self.offspring_size]]
+    @property
+    def leaderboard(self):
+        return self.fitness.argsort()
+
+    def step(self):
+        survivors = [self.population[i] for i in self.leaderboard[:-self.offspring_size]]
         offspring = []
 
         # Cross-Over
@@ -125,6 +137,11 @@ class GeneticAlgorithm():
 
     def zero_fitness(self):
         self.fitness = torch.zeros_like(self.fitness)
+
+    @classmethod
+    def configure(cls, model, *args:typing.Any, **kwargs:typing.Any):
+        model.configure(*args, **kwargs)
+        cls.set_model(model)
 
     @classmethod
     def set_model(cls, model):
