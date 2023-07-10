@@ -9,6 +9,7 @@ from torch.distributions.categorical import Categorical
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 from .genetic_algorithm import GeneticModel
+from .statistics import perplexity
 from .utils import no_grad
 
 class MutatorOutput():
@@ -35,10 +36,6 @@ class MutatorOutput():
         self.input_cls = input_cls
         self.mutated_cls = mutated_cls
         self.cls_distance = cls_distance
-
-    @staticmethod
-    def cat(*args, **kwargs):
-        raise NotImplementedError()
     
     @classmethod
     def to_fitness(cls, obj, p_coef=1, d_coef=0, *args, **kwargs):
@@ -48,7 +45,6 @@ class MutatorOutput():
         mutated_perplexity = obj.mutated_perplexity.mean()
         cls_distance = obj.cls_distance.mean()
         return p_coef * mutated_perplexity + d_coef * cls_distance
-
 
 class Mutator(GeneticModel):
     model = None
@@ -122,8 +118,12 @@ class Mutator(GeneticModel):
         # Compute the mutated sequence pseudo-perplexity
         out = Mutator.model(input_ids=mutated_ids, attention_mask=attention_mask, output_hidden_states=True)
         mutated_embeddings = out.hidden_states[-1]
-        log_probs = F.log_softmax(out.logits, dim=-1)
-        mutated_perplexity = (-((F.one_hot(mutated_ids, num_classes=30) * log_probs).sum(axis=-1) * attention_mask).sum(axis=-1) / attention_mask.sum(axis=-1)).exp()
+        mutated_perplexity = perplexity(
+            model=Mutator.model, 
+            input_ids=input_ids,
+            logits=out.logits,
+            attention_mask=attention_mask
+        )
 
         # CLS token distance
         mutated_cls = out.hidden_states[-1][:,0,:]
