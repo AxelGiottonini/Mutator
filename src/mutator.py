@@ -1,4 +1,5 @@
 import typing
+from collections.abc import Iterable
 
 import torch
 import torch.nn as nn
@@ -8,21 +9,61 @@ from torch.distributions.categorical import Categorical
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 from .genetic_algorithm import GeneticModel
+from .statistics import perplexity
 from .utils import no_grad
+
+class MutatorOutput():
+    def __init__(
+        self,
+        input_ids: typing.Optional[torch.Tensor]=None,
+        input_embeddings: typing.Optional[torch.Tensor]=None,
+        mutated_ids: typing.Optional[torch.Tensor]=None,
+        mutated_embeddings: typing.Optional[torch.Tensor]=None,
+        attention_mask: typing.Optional[torch.Tensor]=None,
+        mutation_mask: typing.Optional[torch.Tensor]=None,
+        mutated_perplexity: typing.Optional[torch.Tensor]=None,
+        input_cls: typing.Optional[torch.Tensor]=None,
+        mutated_cls: typing.Optional[torch.Tensor]=None,
+        cls_distance: typing.Optional[torch.Tensor]=None
+    ):
+        self.input_ids = input_ids
+        self.input_embeddings = input_embeddings
+        self.mutated_ids = mutated_ids
+        self.mutated_embeddings = mutated_embeddings
+        self.attention_mask = attention_mask
+        self.mutation_mask = mutation_mask
+        self.mutated_perplexity = mutated_perplexity
+        self.input_cls = input_cls
+        self.mutated_cls = mutated_cls
+        self.cls_distance = cls_distance
+    
+    @classmethod
+    def to_fitness(cls, obj, p_coef=1, d_coef=0, *args, **kwargs):
+        if isinstance(obj, Iterable):
+            return torch.tensor([cls.to_fitness(el, p_coef, d_coef, *args, **kwargs) for el in obj])
+        
+        mutated_perplexity = obj.mutated_perplexity.mean()
+        cls_distance = obj.cls_distance.mean()
+        return p_coef * mutated_perplexity + d_coef * cls_distance
 
 class Mutator(GeneticModel):
     model = None
     tokenizer = None
+    n_mutations = None
+    k = None
 
-    def __init__(self):
+    def __init__(self, *args:typing.Any, **kwargs:typing.Any):
         super().__init__()
 
         if Mutator.model is None:
             raise RuntimeError("Mutator model is undefined, please define a model using Mutator.set_model(model).")
-
         if Mutator.tokenizer is None:
             raise RuntimeError("Mutator tokenizer is undefined, please define a tokenizer using Mutator.set_tokenizer(tokenizer).")
-
+        if Mutator.n_mutations is None:
+            raise RuntimeError("Mutator n_mutations is undefined, please define the number of mutations using Mutator.set_n_mutations(n).")
+        if Mutator.n_mutations is None:
+            raise RuntimeError("Mutator k is undefined, please define the number of mutations using Mutator.set_k(k).")
+        
         self.classifier = nn.Sequential(
             nn.Linear(Mutator.model.config.hidden_size, Mutator.model.config.hidden_size, bias=False),
             nn.ReLU(),
@@ -32,50 +73,83 @@ class Mutator(GeneticModel):
     @no_grad
     def forward(
         self, 
-        input_ids: torch.Tensor, 
-        attention_mask: torch.Tensor, 
-        n_mutations: int, 
-        k: int,
-        cls_input: typing.Optional[torch.Tensor] = None
+        input_ids: typing.Optional[torch.Tensor]=None,
+        input_embeddings: typing.Optional[torch.Tensor]=None,
+        input_cls: typing.Optional[torch.Tensor]=None,
+        attention_mask: typing.Optional[torch.Tensor]=None,
+        mutator_output: typing.Optional[MutatorOutput]=None,
+        *args: typing.Any,
+        **kwargs: typing.Any
     ):
-        # Get current sequence embeddings
-        out = Mutator.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True)
-        embeddings = out.hidden_states[-1]
+        if mutator_output is None:            
+            if attention_mask is None:
+                raise ValueError("Specify attention_mask")
+
+            if input_embeddings is None:
+                if input_ids is None:
+                    raise ValueError("Specify either input_embeddings either input_ids")
+                embeddings = Mutator.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True).hidden_states[-1]
+
+            if input_cls is None:
+                input_cls = embeddings[:,0,:]
+        else:
+            input_ids = mutator_output.mutated_ids
+            input_embeddings = mutator_output.mutated_embeddings
+            input_cls = mutator_output.input_cls
+            attention_mask = mutator_output.attention_mask
+
 
         # Compute the sequences mask from the embeddings
         logits = self.classifier(embeddings)[:,:,0]
         logits = attention_mask * logits + (1-attention_mask) * -1e6
         probs = F.softmax(logits, dim=-1)
-        mutations = Categorical(probs=probs).sample(sample_shape=torch.Size([1, n_mutations]))[0,:,:].T
-        mutations_mask = (F.one_hot(mutations, num_classes=logits.shape[-1]).sum(axis=1) > 0).long()
+        mutation = Categorical(probs=probs).sample(sample_shape=torch.Size([1, Mutator.n_mutations]))[0,:,:].T
+        mutation_mask = (F.one_hot(mutation, num_classes=logits.shape[-1]).sum(axis=1) > 0).long()
 
         # Mask the input the input ids using the mutations mask
-        masked_input_ids = ((1-mutations_mask)*input_ids) + (mutations_mask*Mutator.tokenizer.mask_token_id)
+        masked_input_ids = ((1-mutation_mask)*input_ids) + (mutation_mask*Mutator.tokenizer.mask_token_id)
 
         # Predict the masked ids
         out = Mutator.model(input_ids=masked_input_ids, attention_mask=attention_mask)
-        top_k_ids = (-out.logits).argsort(dim=-1)[:,:,:k]
+        top_k_ids = (-out.logits).argsort(dim=-1)[:,:,:Mutator.k]
         is_in_top_k_ids = ((input_ids[:,:,None] - top_k_ids == 0).sum(axis=-1) > 0).long()
-        mutated_ids = (1-mutations_mask)*input_ids + mutations_mask*(is_in_top_k_ids*input_ids + (1-is_in_top_k_ids)*top_k_ids[:,:,0])
+        mutated_ids = (1-mutation_mask)*input_ids + mutation_mask*(is_in_top_k_ids*input_ids + (1-is_in_top_k_ids)*top_k_ids[:,:,0])
         
         # Compute the mutated sequence pseudo-perplexity
         out = Mutator.model(input_ids=mutated_ids, attention_mask=attention_mask, output_hidden_states=True)
-        log_probs = F.log_softmax(out.logits, dim=-1)
-        perplexity = (-((F.one_hot(mutated_ids, num_classes=30) * log_probs).sum(axis=-1) * attention_mask).sum(axis=-1) / attention_mask.sum(axis=-1)).exp()
+        mutated_embeddings = out.hidden_states[-1]
+        mutated_perplexity = perplexity(
+            model=Mutator.model, 
+            input_ids=input_ids,
+            logits=out.logits,
+            attention_mask=attention_mask
+        )
 
         # CLS token distance
-        cls_input = embeddings[:,0,:] if cls_input is None else cls_input
-        cls_output = out.hidden_states[-1][:,0,:]
-        cls_distance = F.mse_loss(cls_output, cls_input, reduction='none').mean(axis=-1)
+        mutated_cls = out.hidden_states[-1][:,0,:]
+        cls_distance = F.mse_loss(mutated_cls, input_cls, reduction='none').mean(axis=-1)
 
-        out = {
-            "mutated_ids": mutated_ids,
-            "perplexity": perplexity,
-            "cls_distance": cls_distance
-        }
-        out = type('',(object,), out)()
-
+        out = MutatorOutput(
+            input_ids=input_ids,
+            input_embeddings=input_embeddings,
+            mutated_ids=mutated_ids,
+            mutated_embeddings=mutated_embeddings,
+            attention_mask=attention_mask,
+            mutation_mask=mutation_mask,
+            mutated_perplexity=mutated_perplexity,
+            input_cls=input_cls,
+            mutated_cls=mutated_cls,
+            cls_distance=cls_distance,
+        )
         return out
+
+    @classmethod
+    def configure(cls, model, tokenizer, n_mutations, k, mutation_rate):
+        cls.set_model(model)
+        cls.set_tokenizer(tokenizer)
+        cls.set_n_mutations(n_mutations)
+        cls.set_k(k)
+        cls.set_mutation_rate(mutation_rate)
 
     @classmethod
     def set_model(cls, model:AutoModelForMaskedLM):
@@ -84,3 +158,11 @@ class Mutator(GeneticModel):
     @classmethod
     def set_tokenizer(cls, tokenizer:AutoTokenizer):
         cls.tokenizer = tokenizer
+
+    @classmethod
+    def set_n_mutations(cls, n_mutations: int):
+        cls.n_mutations = n_mutations
+
+    @classmethod
+    def set_k(cls, k: int):
+        cls.k = k

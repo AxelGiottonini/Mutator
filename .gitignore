@@ -2,5 +2,7 @@
 *.fasta
 *.database
 *.tar.gz
-logs/*
-models/*
+*.pyc
+logs/
+models/
+__pycache__
