@@ -9,6 +9,19 @@ import time
 import torch
 import torch.nn as nn
 
+import torch
+from torch.utils.data import DataLoader
+
+from transformers import AutoTokenizer, AutoModelForMaskedLM
+from transformers.adapters import PfeifferInvConfig
+
+from .dataset import Dataset
+from .tokenizer import __get_collate_fn__
+
+from .cli import summary
+
+__all__ = ["no_grad", "train_loop", "get_model", "get_dataloaders"]
+
 def no_grad(fun: typing.Callable)->typing.Callable:
     """
     Decorator function to disable gradients.
@@ -27,9 +40,8 @@ def no_grad(fun: typing.Callable)->typing.Callable:
 def train_loop(
     model: nn.Module,
     optimizer: torch.optim.Optimizer,
-    global_batch_size: int, 
     n_epochs: int,
-    logging: logging,
+    global_batch_size: int,
     local_batch_size: typing.Optional[int]=None,
     device: torch.device=torch.device("cuda:0" if torch.cuda.is_available else "cpu"), 
     precision: torch.memory_format=torch.bfloat16,
@@ -43,8 +55,7 @@ def train_loop(
             model=model, 
             optimizer=optimizer,
             global_batch_size=64,
-            n_epochs=50,
-            logging=logging
+            n_epochs=50
         )
         def fun(*args, **kwargs):
             ...
@@ -65,6 +76,7 @@ def train_loop(
 
     def decorator(step: typing.Callable)->typing.Callable:
         def wrapper(training_dataloader, validation_dataloader, args):
+            summary(model, training_dataloader, validation_dataloader)
             for i_epoch in range(1, n_epochs+1):
                 try:
                     epoch_metrics = {
@@ -77,7 +89,7 @@ def train_loop(
                     model.train()
                     torch.cuda.empty_cache()
                     for i_batch, batch in enumerate(training_dataloader):
-                        loss = step(model, batch)
+                        loss = step(model, batch.to(device))
                         (loss / accumulation_steps).backward()
 
                         if (
@@ -103,7 +115,7 @@ def train_loop(
                     model.eval()
                     torch.cuda.empty_cache()
                     for i_batch, batch in enumerate(validation_dataloader):
-                        loss = step(model, batch)
+                        loss = step(model, batch.to(device))
 
                         epoch_metrics["validation/loss"].append(loss.item())
 
@@ -142,14 +154,60 @@ def train_loop(
                     sys.exit(0)
 
             model.save_adapter(
-                os.path.join(args["model_dir"], args["model_name"], args["model_version"], "crash"), 
+                os.path.join(args["model_dir"], args["model_name"], args["model_version"], "final"), 
                 "thermo"
             )
             torch.save(
                 optimizer.state_dict(), 
-                os.path.join(args["model_dir"], args["model_name"], args["model_version"], "crash", "optimizer.bin")
+                os.path.join(args["model_dir"], args["model_name"], args["model_version"], "final", "optimizer.bin")
             )
-
 
         return wrapper
     return decorator
+
+def __get_tokenizer(args):
+    return AutoTokenizer.from_pretrained(args["from_tokenizer"])
+
+def __get_collate_fn(tokenizer, args):
+    return __get_collate_fn__(tokenizer, mask=True, mask_rate=args["p"])
+
+def get_model(args, get_config=False, get_optimizer=False):
+    model = AutoModelForMaskedLM.from_pretrained(args["from_model"])
+    config = PfeifferInvConfig()
+    if args["from_adapters"] is None:
+        model.add_adapter("thermo", config=config)
+    else:
+        model.load_adapter(args["from_adapters"])
+    model.set_active_adapters("thermo")
+    model.train_adapter("thermo")
+
+    optimizer = torch.optim.AdamW(
+        model.parameters(), 
+        lr=args["learning_rate"], 
+        betas=args["betas"], 
+        eps=args["eps"], 
+        weight_decay=args["weight_decay"]
+    )
+
+    return (
+        model,
+        config if get_config else None, 
+        optimizer if get_optimizer else None
+    )
+
+def get_dataloaders(args, get_tokenizer=False, get_collate_fn=False):
+    tokenizer = __get_tokenizer(args)
+    collate_fn = __get_collate_fn(tokenizer, args)
+
+    training_set = Dataset(args["training_set"], min_length=args["min_length"], max_length=args["max_length"])
+    validation_set = Dataset(args["validation_set"], min_length=args["min_length"], max_length=args["max_length"])
+
+    training_dataloader = DataLoader(dataset=training_set, batch_size=args["local_batch_size"], shuffle=True, num_workers=args["num_workers"], collate_fn=collate_fn)
+    validation_dataloader = DataLoader(dataset=validation_set, batch_size=args["local_batch_size"], shuffle=False, num_workers=args["num_workers"], collate_fn=collate_fn)
+
+    return (
+        training_dataloader,
+        validation_dataloader,
+        tokenizer if get_tokenizer else None,
+        collate_fn if get_collate_fn else None
+    )

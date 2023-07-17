@@ -12,6 +12,12 @@ class Tokens():
         self.input_ids = input_ids
         self.attention_mask = attention_mask
 
+    def to(self, *args, **kwargs):
+        self.input_ids = self.input_ids.to(*args, **kwargs)
+        self.attention_mask = self.attention_mask.to(*args, **kwargs)
+
+        return self
+
 class MaskedTokens(Tokens):
     def __init__(
         self,
@@ -24,7 +30,13 @@ class MaskedTokens(Tokens):
         self.masked_input_ids = masked_input_ids
         self.masked_mask = masked_mask
 
-def get_collate_fn(
+    def to(self, *args, **kwargs):
+        super().to(*args, **kwargs)
+        self.masked_input_ids = self.masked_input_ids.to(*args, **kwargs)
+        self.masked_mask = self.masked_mask.to(*args, **kwargs)
+        return self
+
+def __get_collate_fn__(
     tokenizer: AutoTokenizer,
     mask: typing.Optional[bool]=False,
     mask_rate: typing.Optional[float]=None
