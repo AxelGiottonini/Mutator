@@ -22,7 +22,7 @@ model = AutoModelForMaskedLM.from_pretrained("Rostlab/prot_bert_bfd")
 model.add_adapter("<adapter_name>", config=config)
 model.set_active_adapters("<adapter_name>")
 
-ga = GA.configure(
+GA.configure(
     Mutator, 
     model, 
     tokenizer, 
@@ -30,6 +30,7 @@ ga = GA.configure(
     k=3, 
     mutation_rate=0.1
 )
+ga = GA(100, 80)
 
 # Loading the datasets
 #TODO
