@@ -41,6 +41,8 @@ def __parse_args__():
     parser.add_argument("--mutation_rate", type=float, default=0.1)
     parser.add_argument("--population_size", type=int, default=100)
     parser.add_argument("--offspring_size", type=int, default=60)
+    parser.add_argument("--p_coef", type=float, default=1.0)
+    parser.add_argument("--d_coef", type=float, default=1.0)
 
     parser.add_argument("--save_each", type=int, default=10)
     args = vars(parser.parse_args())
@@ -93,8 +95,8 @@ def configure():
 def summary(model, training_dataloader, validation_dataloader):
     n_total_params = sum(p.numel() for p in model.parameters())
     n_train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    len_training_dataloader = len(training_dataloader)
-    len_validation_dataloader = len(validation_dataloader)
+    len_training_dataloader = len(training_dataloader) if training_dataloader is not None else 0
+    len_validation_dataloader = len(validation_dataloader) if validation_dataloader is not None else 0
     logging.info(
         f"\n"
         f"Parameters:\n" +

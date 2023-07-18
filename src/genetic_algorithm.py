@@ -1,5 +1,4 @@
-from joblib import Parallel, delayed
-
+import warnings
 import typing
 
 from copy import deepcopy
@@ -179,17 +178,26 @@ class GeneticAlgorithm():
     def set_device(cls, device):
         if device is not None:
             cls.device = device
-            cls.model.to(device)
 
     @classmethod
     def set_precision(cls, precision):
         if precision is not None:
             cls.precision = precision
-            cls.model.to(precision)
 
     # Compatibility with pytorch modules training loop
+    def to(self, *args, **kwargs):
+        warnings.warn("GeneticAlgorithm support for to method might be removed in future versions", FutureWarning)
+
+    def train(self, *args, **kwargs):
+        warnings.warn("GeneticAlgorithm support for train method might be removed in future versions", FutureWarning)
+
     def forward(self, *args, **kwargs):
         return self(*args, **kwargs)
     
     def zero_grad(self, *args, **kwargs):
         self.zero_fitness(*args, **kwargs)
+    
+    def parameters(self, *args, **kwargs):
+        for model in self:
+            for p in model.parameters():
+                yield p

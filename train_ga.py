@@ -1,35 +1,23 @@
-import os
-
-import logging
-
+import random
 import torch
 
-from src import Mutator, MutatorOutput, GeneticAlgorithm as GA, get_model, get_dataloaders, configure
+from src import Mutator, MutatorOutput, GeneticAlgorithm as GA, get_model, get_dataloaders, configure, train_loop
+
+random.seed(42)
+torch.manual_seed(42)
 
 if __name__ == "__main__":
-    #args = {
-    #    "from_tokenizer": "Rostlab/prot_bert_bfd",
-    #    "from_model": "Rostlab/prot_bert_bfd",
-    #    "from_adapters": "./models/hps/LR0.001_BS256_P0.05/best/",
-    #    "training_set": "./data/non_thermo.csv",
-    #    "min_length": None,
-    #    "max_length": None,
-    #    "global_batch_size": 128,
-    #    "local_batch_size": 128,
-    #    "num_workers": 8,
-    #    "mask": False,
-    #    "p": 0,
-    #    "n_epochs": 10
-    #}
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    precision = torch.bfloat16
 
     args = configure()
     dataloader, tokenizer = get_dataloaders(args, return_validation=False, return_tokenizer=True)
     model = get_model(args)
-    model.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
-    model.to(torch.bfloat16)
+    model.to(device).to(precision)
 
     GA.configure(
-        Mutator, None, None,
+        Mutator, device, precision,
         model,
         tokenizer=tokenizer,
         n_mutations=args["n_mutations"],
@@ -38,24 +26,29 @@ if __name__ == "__main__":
     )
     ga = GA(args["population_size"], args["offspring_size"])
 
-    accumulation_steps = args["global_batch_size"] // args["local_batch_size"]
+    @train_loop(
+        model = ga,
+        optimizer = ga,
+        args = args,
+        backpropagation = False,
+        save_model = True,
+        save_adapter = False,
+        save_optimizer = False
+    )
+    def train(model, batch):
+        input_ids = batch.input_ids#.to(model.device)
+        attention_mask = batch.attention_mask#.to(model.device)
+        p_coef = args["p_coef"]
+        d_coef = args["d_coef"]
 
-    for i_epoch in range(args["n_epochs"]):
-        for i_batch, batch in enumerate(dataloader):
-            out = ga(
-                MutatorOutput.to_fitness, 
-                input_ids=batch.input_ids.to(ga.device), 
-                attention_mask=batch.attention_mask.to(ga.device), 
-                p_coef=1, 
-                d_coef=1
-            )
+        model(
+            MutatorOutput.to_fitness,
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            p_coef=p_coef,
+            d_coef=d_coef
+        )
 
-            if (
-                (i_batch + 1) % accumulation_steps == 0 or 
-                (i_batch + 1) == len(dataloader)
-            ):
-                print(ga.fitness)
-                ga.step()
-                ga.zero_fitness()
-
-    ga.save(os.path.join(args["model_dir"], args["model_name"], args["model_version"], "best" + ".bin"))
+        return model.fitness.min()
+    
+    train(dataloader)
