@@ -1,3 +1,5 @@
+from joblib import Parallel, delayed
+
 import typing
 
 from copy import deepcopy
@@ -25,7 +27,7 @@ def crossover(allele_1, allele_2):
     return new_allele_1, new_allele_2
 
 def mutation(allele, mutation_rate):
-    mutation = F.dropout(torch.normal(0, allele.std(), size=allele.shape), (1-mutation_rate))
+    mutation = F.dropout(torch.normal(0, allele.std(), size=allele.shape), (1-mutation_rate)).to(allele.device).to(allele.dtype)
     new_allele = allele + mutation
     return new_allele
 
@@ -60,7 +62,7 @@ class GeneticModel(nn.Module):
         offspring = deepcopy(self)
 
         for locus in offspring.parameters():
-            allele = mutation(locus.data, GeneticModel.mutation_rate)
+            allele = mutation(locus.data, self.mutation_rate)
             locus.data = nn.parameter.Parameter(allele)
         
         return offspring
@@ -76,6 +78,8 @@ class GeneticAlgorithmOutput():
 
 class GeneticAlgorithm():
     model = None
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    precision = torch.bfloat16
 
     def __init__(
         self, 
@@ -84,13 +88,13 @@ class GeneticAlgorithm():
         *args: typing.Any, 
         **kwargs: typing.Any
     ):
-        if GeneticAlgorithm.model is None:
+        if self.model is None:
             raise RuntimeError("GeneticAlgorithm model is undefined, please define a model using GeneticAlgorithm.set_model(model).")        
 
         self.population_size = population_size
         self.offspring_size = offspring_size
 
-        self.population = [GeneticAlgorithm.model(args, kwargs) for _ in range(population_size)]
+        self.population = [self.model(args, kwargs).to(self.device).to(self.precision) for _ in range(population_size)]
         self.fitness = torch.zeros(population_size)
 
     def __call__(
@@ -100,7 +104,7 @@ class GeneticAlgorithm():
         **kwargs: typing.Any
     ) -> GeneticAlgorithmOutput:
 
-        outcome = [el(*args, **kwargs) for el in self.population]
+        outcome = [el(*args, **kwargs) for el in self]
         fitness = to_fitness(outcome, *args, **kwargs)
 
         self.fitness += fitness
@@ -117,12 +121,24 @@ class GeneticAlgorithm():
     def __getitem__(self, index):
         return self.population[index]
 
+    def __iter__(self):
+        self.__index = 0
+        return self
+    
+    def __next__(self):
+        if self.__index >= len(self):
+            raise StopIteration
+        
+        out = self[self.__index]
+        self.__index = self.__index + 1
+        return out
+
     @property
     def leaderboard(self):
         return self.fitness.argsort()
 
     def step(self):
-        survivors = [self.population[i] for i in self.leaderboard[:-self.offspring_size]]
+        survivors = [self[i] for i in self.leaderboard[:-self.offspring_size]]
         offspring = []
 
         # Cross-Over
@@ -138,11 +154,42 @@ class GeneticAlgorithm():
     def zero_fitness(self):
         self.fitness = torch.zeros_like(self.fitness)
 
+    def save(self, path, *args, **kwargs):
+        torch.save(self[0].state_dict(), path, *args, **kwargs)
+
     @classmethod
-    def configure(cls, model, *args:typing.Any, **kwargs:typing.Any):
+    def configure(
+        cls, 
+        model, 
+        device=None, 
+        precision=None, 
+        *args:typing.Any, 
+        **kwargs:typing.Any
+    ):
         model.configure(*args, **kwargs)
         cls.set_model(model)
+        cls.set_device(device)
+        cls.set_precision(precision)
 
     @classmethod
     def set_model(cls, model):
         cls.model = model
+
+    @classmethod
+    def set_device(cls, device):
+        if device is not None:
+            cls.device = device
+            cls.model.to(device)
+
+    @classmethod
+    def set_precision(cls, precision):
+        if precision is not None:
+            cls.precision = precision
+            cls.model.to(precision)
+
+    # Compatibility with pytorch modules training loop
+    def forward(self, *args, **kwargs):
+        return self(*args, **kwargs)
+    
+    def zero_grad(self, *args, **kwargs):
+        self.zero_fitness(*args, **kwargs)

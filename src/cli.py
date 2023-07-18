@@ -34,6 +34,8 @@ def __parse_args__():
     parser.add_argument("--global_batch_size", type=int, default=128, help="Batch size")
     parser.add_argument("--local_batch_size", type=int, default=1, help="Mini-Batch size")
     parser.add_argument("--num_workers", type=int, default=10, help="Number of sub-processes to use for data loading.")
+
+    parser.add_argument("--save_each", type=int, default=10)
     args = vars(parser.parse_args())
 
     betas = args["betas"][1:-1].replace(" ", "").split(",")
@@ -43,6 +45,8 @@ def __parse_args__():
 
     if not args["global_batch_size"] % args["local_batch_size"] == 0:
         raise ValueError(f"--global_batch_size ({args['global_batch_size']}) should be a multiple of --local_batch_size ({args['local_batch_size']})")
+
+    args["mask"] = True
 
     return args
 

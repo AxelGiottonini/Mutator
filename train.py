@@ -11,15 +11,13 @@ torch.manual_seed(42)
 if __name__ == "__main__":
 
     args = configure()
-    training_dataloader, validation_dataloader, tokenizer, collate_fn = get_dataloaders(args, get_tokenizer=True, get_collate_fn=True)
-    model, _, optimizer = get_model(args, get_config=False, get_optimizer=True)
+    training_dataloader, validation_dataloader = get_dataloaders(args)
+    model, optimizer = get_model(args, get_config=False, get_optimizer=True)
 
     @train_loop(
         model = model,
         optimizer = optimizer,
-        n_epochs = args["n_epochs"],
-        global_batch_size = args["global_batch_size"],
-        local_batch_size = args["local_batch_size"]
+        args = args
     )
     def train(model, batch):
 
@@ -37,4 +35,4 @@ if __name__ == "__main__":
         loss = ((masked_mask.flatten() * loss)).sum() / masked_mask.sum()
         return loss
 
-    train(training_dataloader, validation_dataloader, args)
+    train(training_dataloader, validation_dataloader)
