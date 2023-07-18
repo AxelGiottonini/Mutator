@@ -3,6 +3,8 @@
 *.database
 *.tar.gz
 *.pyc
+slurm-*.out
+*.bin
 logs/
 models/
 __pycache__
