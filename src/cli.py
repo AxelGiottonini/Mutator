@@ -18,22 +18,29 @@ def __parse_args__():
     parser.add_argument("--from_model", type=str, default="Rostlab/prot_bert_bfd", help="Path to repository containing the model's encoder and decoder")
     parser.add_argument("--from_adapters", type=str, default=None, help="Path to repository containing the model's adapter, if None, the adapters are initialized")
     
-    parser.add_argument("--learning_rate", type=float, required=True, help="Learning rate")
+    parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--betas", type=str, default="(0.9, 0.999)", help="betas")
     parser.add_argument("--eps", type=float, default=1e-08, help="eps")
     parser.add_argument("--weight_decay", type=float, default=0.01, help="weight decay")
     
     parser.add_argument("--training_set", type=str, required=True, help="Path to training set")
-    parser.add_argument("--validation_set", type=str, required=True, help="Path to validation set")
+    parser.add_argument("--validation_set", type=str, default=None, help="Path to validation set")
     parser.add_argument("--min_length", type=int, default=None, help="Minimum sequence length")
     parser.add_argument("--max_length", type=int, default=None, help="Maximum sequence length")
 
+    parser.add_argument("--mask", action="store_true")
     parser.add_argument("--p", type=float, default=0.15, help="masking probability")
 
     parser.add_argument("--n_epochs", type=int, default=50, help="Maximum number of epochs")
     parser.add_argument("--global_batch_size", type=int, default=128, help="Batch size")
     parser.add_argument("--local_batch_size", type=int, default=1, help="Mini-Batch size")
     parser.add_argument("--num_workers", type=int, default=10, help="Number of sub-processes to use for data loading.")
+
+    parser.add_argument("--n_mutations", type=int, default=5)
+    parser.add_argument("--k", type=int, default=3)
+    parser.add_argument("--mutation_rate", type=float, default=0.1)
+    parser.add_argument("--population_size", type=int, default=100)
+    parser.add_argument("--offspring_size", type=int, default=60)
 
     parser.add_argument("--save_each", type=int, default=10)
     args = vars(parser.parse_args())
@@ -45,8 +52,6 @@ def __parse_args__():
 
     if not args["global_batch_size"] % args["local_batch_size"] == 0:
         raise ValueError(f"--global_batch_size ({args['global_batch_size']}) should be a multiple of --local_batch_size ({args['local_batch_size']})")
-
-    args["mask"] = True
 
     return args
 

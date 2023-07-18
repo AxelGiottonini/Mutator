@@ -176,7 +176,7 @@ def __get_tokenizer(args):
 def __get_collate_fn(tokenizer, args):
     return __get_collate_fn__(tokenizer, mask=args["mask"], mask_rate=args["p"])
 
-def get_model(args, get_config=False, get_optimizer=False):
+def get_model(args, return_config=False, return_optimizer=False):
     model = AutoModelForMaskedLM.from_pretrained(args["from_model"])
     config = PfeifferInvConfig()
     if args["from_adapters"] is None:
@@ -186,7 +186,8 @@ def get_model(args, get_config=False, get_optimizer=False):
     model.set_active_adapters("thermo")
     model.train_adapter("thermo")
 
-    if get_optimizer:
+    optimizer = None
+    if return_optimizer:
         optimizer = torch.optim.AdamW(
             model.parameters(), 
             lr=args["learning_rate"], 
@@ -197,43 +198,33 @@ def get_model(args, get_config=False, get_optimizer=False):
 
     out =  (
         model,
-        config if get_config else None, 
-        optimizer if get_optimizer else None
+        optimizer,
+        config if return_config else None, 
     )
-
     out = tuple(el for el in out if el is not None)
     out = out[0] if len(out) == 1 else out
     return out
 
-def get_dataloaders(args, get_training_and_validation=True, get_tokenizer=False, get_collate_fn=False):
+def get_dataloaders(args, return_validation=True, return_tokenizer=False, return_collate_fn=False):
 
     tokenizer = __get_tokenizer(args)
     collate_fn = __get_collate_fn(tokenizer, args)
 
-    if get_training_and_validation:
-        training_set = Dataset(args["training_set"], min_length=args["min_length"], max_length=args["max_length"])
-        validation_set = Dataset(args["validation_set"], min_length=args["min_length"], max_length=args["max_length"])
+    training_set = Dataset(args["training_set"], min_length=args["min_length"], max_length=args["max_length"])
+    training_dataloader = DataLoader(dataset=training_set, batch_size=args["local_batch_size"], shuffle=True, num_workers=args["num_workers"], collate_fn=collate_fn)
 
-        training_dataloader = DataLoader(dataset=training_set, batch_size=args["local_batch_size"], shuffle=True, num_workers=args["num_workers"], collate_fn=collate_fn)
+    validation_set = None
+    validation_dataloader = None
+    if return_validation:
+        validation_set = Dataset(args["validation_set"], min_length=args["min_length"], max_length=args["max_length"])
         validation_dataloader = DataLoader(dataset=validation_set, batch_size=args["local_batch_size"], shuffle=False, num_workers=args["num_workers"], collate_fn=collate_fn)
 
-        out =  (
-            training_dataloader,
-            validation_dataloader,
-            tokenizer if get_tokenizer else None,
-            collate_fn if get_collate_fn else None
-        )
-    
-    else:
-        dataset = Dataset(args["set"], min_length=args["min_length"], max_length=args["max_length"])
-        dataloader = DataLoader(dataset=dataset, batch_size=args["local_batch_size"], shuffle=False, num_workers=10, collate_fn=collate_fn)
-
-        out =  (
-            dataloader,
-            tokenizer if get_tokenizer else None,
-            collate_fn if get_collate_fn else None
-        )
-    
+    out =  (
+        training_dataloader,
+        validation_dataloader,
+        tokenizer if return_tokenizer else None,
+        collate_fn if return_collate_fn else None
+    ) 
     out = tuple(el for el in out if el is not None)
     out = out[0] if len(out) == 1 else out
     return out

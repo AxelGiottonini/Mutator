@@ -10,4 +10,5 @@ CUDA_VISIBLE_DEVICES=0 python ./train.py \
     --n_epochs 1 \
     --global_batch_size 32 \
     --local_batch_size 16 \
-    --num_workers 16
+    --num_workers 16 \
+    --mask

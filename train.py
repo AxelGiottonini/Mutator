@@ -12,7 +12,7 @@ if __name__ == "__main__":
 
     args = configure()
     training_dataloader, validation_dataloader = get_dataloaders(args)
-    model, optimizer = get_model(args, get_config=False, get_optimizer=True)
+    model, optimizer = get_model(args, return_config=False, return_optimizer=True)
 
     @train_loop(
         model = model,

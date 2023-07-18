@@ -1,24 +1,29 @@
+import os
+
+import logging
+
 import torch
 
-from src import Mutator, MutatorOutput, GeneticAlgorithm as GA, get_model, get_dataloaders
+from src import Mutator, MutatorOutput, GeneticAlgorithm as GA, get_model, get_dataloaders, configure
 
 if __name__ == "__main__":
-    args = {
-        "from_tokenizer": "Rostlab/prot_bert_bfd",
-        "from_model": "Rostlab/prot_bert_bfd",
-        "from_adapters": "./models/hps/LR0.001_BS256_P0.05/best/",
-        "set": "./data/non_thermo.csv",
-        "min_length": None,
-        "max_length": None,
-        "global_batch_size": 128,
-        "local_batch_size": 128,
-        "num_workers": 8,
-        "mask": False,
-        "p": 0,
-        "n_epochs": 10
-    }
+    #args = {
+    #    "from_tokenizer": "Rostlab/prot_bert_bfd",
+    #    "from_model": "Rostlab/prot_bert_bfd",
+    #    "from_adapters": "./models/hps/LR0.001_BS256_P0.05/best/",
+    #    "training_set": "./data/non_thermo.csv",
+    #    "min_length": None,
+    #    "max_length": None,
+    #    "global_batch_size": 128,
+    #    "local_batch_size": 128,
+    #    "num_workers": 8,
+    #    "mask": False,
+    #    "p": 0,
+    #    "n_epochs": 10
+    #}
 
-    dataloader, tokenizer = get_dataloaders(args, get_training_and_validation=False, get_tokenizer=True)
+    args = configure()
+    dataloader, tokenizer = get_dataloaders(args, return_validation=False, return_tokenizer=True)
     model = get_model(args)
     model.to(torch.device("cuda:0" if torch.cuda.is_available() else "cpu"))
     model.to(torch.bfloat16)
@@ -27,11 +32,11 @@ if __name__ == "__main__":
         Mutator, None, None,
         model,
         tokenizer=tokenizer,
-        n_mutations=5,
-        k=3,
-        mutation_rate=0.1
+        n_mutations=args["n_mutations"],
+        k=args["k"],
+        mutation_rate=args["mutation_rate"]
     )
-    ga = GA(4, 2)
+    ga = GA(args["population_size"], args["offspring_size"])
 
     accumulation_steps = args["global_batch_size"] // args["local_batch_size"]
 
@@ -53,4 +58,4 @@ if __name__ == "__main__":
                 ga.step()
                 ga.zero_fitness()
 
-    ga.save("best_mutator_2")
+    ga.save(os.path.join(args["model_dir"], args["model_name"], args["model_version"], "best" + ".bin"))
