@@ -1,5 +1,4 @@
 #!/bin/bash
-
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:lmol
 #SBATCH --time=20:00:00
@@ -7,7 +6,7 @@
 export CUDA_VISIBLE_DEVICES=0 
 srun python3 train_ga.py \
     --model_name "Mutator" \
-    --model_version "0.1" \
+    --model_version "0.2" \
     --from_tokenizer "Rostlab/prot_bert_bfd" \
     --from_model "Rostlab/prot_bert_bfd" \
     --from_adapters "./models/hps/LR0.001_BS256_P0.05/best/" \

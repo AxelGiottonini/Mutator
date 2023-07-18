@@ -1,8 +1,11 @@
 #!/bin/bash
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:lmol
+#SBATCH --time=20:00:00
 
 CUDA_VISIBLE_DEVICES=0 python ./train.py \
     --model_name test \
-    --model_version 1 \
+    --model_version 2 \
     --learning_rate 0.0004 \
     --training_set "./data/_test.csv" \
     --validation_set "./data/_val.csv" \
