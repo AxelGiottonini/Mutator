@@ -70,11 +70,11 @@ def train_loop(
     def save(dir_name):
         if save_model:
             try:
-                model.save(os.path.join(args["model_dir"], args["model_name"], args["model_version"], dir_name))
+                model.save(os.path.join(args["model_dir"], args["model_name"], args["model_version"], dir_name, "model.bin"))
             except NameError:
                 torch.save(
                     model.state_dict(),
-                    os.path.join(args["model_dir"], args["model_name"], args["model_version"], dir_name)
+                    os.path.join(args["model_dir"], args["model_name"], args["model_version"], dir_name, "model.bin")
                 )
         
         if save_adapter:
