@@ -36,8 +36,8 @@ if __name__ == "__main__":
         save_optimizer = False
     )
     def train(model, batch):
-        input_ids = batch.input_ids#.to(model.device)
-        attention_mask = batch.attention_mask#.to(model.device)
+        input_ids = batch.input_ids
+        attention_mask = batch.attention_mask
         p_coef = args["p_coef"]
         d_coef = args["d_coef"]
 
