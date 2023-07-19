@@ -17,6 +17,7 @@ def __parse_args__():
     parser.add_argument("--from_tokenizer", type=str, default="Rostlab/prot_bert_bfd", help="Path or Huggingface's repository of the model's tokenizer")
     parser.add_argument("--from_model", type=str, default="Rostlab/prot_bert_bfd", help="Path to repository containing the model's encoder and decoder")
     parser.add_argument("--from_adapters", type=str, default=None, help="Path to repository containing the model's adapter, if None, the adapters are initialized")
+    parser.add_argument("--from_mutator", type=str, default=None)
     
     parser.add_argument("--learning_rate", type=float, default=0.001, help="Learning rate")
     parser.add_argument("--betas", type=str, default="(0.9, 0.999)", help="betas")
