@@ -1,16 +1,13 @@
 import typing
+from dataclasses import dataclass
 import torch
 
 from transformers import AutoTokenizer
 
+@dataclass
 class Tokens():
-    def __init__(
-        self,
-        input_ids: typing.Optional[torch.Tensor]=None,
-        attention_mask: typing.Optional[torch.Tensor]=None
-    ):
-        self.input_ids = input_ids
-        self.attention_mask = attention_mask
+    input_ids: typing.Optional[torch.Tensor]=None,
+    attention_mask: typing.Optional[torch.Tensor]=None
 
     def to(self, *args, **kwargs):
         self.input_ids = self.input_ids.to(*args, **kwargs)
@@ -18,17 +15,10 @@ class Tokens():
 
         return self
 
+@dataclass
 class MaskedTokens(Tokens):
-    def __init__(
-        self,
-        masked_input_ids: typing.Optional[torch.Tensor]=None,
-        masked_mask: typing.Optional[torch.Tensor]=None,
-        *args: typing.Any,
-        **kwargs: typing.Any
-    ):
-        super().__init__(*args, **kwargs)
-        self.masked_input_ids = masked_input_ids
-        self.masked_mask = masked_mask
+    masked_input_ids: typing.Optional[torch.Tensor]=None,
+    masked_mask: typing.Optional[torch.Tensor]=None,
 
     def to(self, *args, **kwargs):
         super().to(*args, **kwargs)

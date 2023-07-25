@@ -1,4 +1,5 @@
 import typing
+from dataclasses import dataclass
 from collections.abc import Iterable
 
 import torch
@@ -12,30 +13,18 @@ from .genetic_algorithm import GeneticModel
 from .statistics import perplexity
 from .utils import no_grad
 
+@dataclass
 class MutatorOutput():
-    def __init__(
-        self,
-        input_ids: typing.Optional[torch.Tensor]=None,
-        input_embeddings: typing.Optional[torch.Tensor]=None,
-        mutated_ids: typing.Optional[torch.Tensor]=None,
-        mutated_embeddings: typing.Optional[torch.Tensor]=None,
-        attention_mask: typing.Optional[torch.Tensor]=None,
-        mutation_mask: typing.Optional[torch.Tensor]=None,
-        mutated_perplexity: typing.Optional[torch.Tensor]=None,
-        input_cls: typing.Optional[torch.Tensor]=None,
-        mutated_cls: typing.Optional[torch.Tensor]=None,
-        cls_distance: typing.Optional[torch.Tensor]=None
-    ):
-        self.input_ids = input_ids
-        self.input_embeddings = input_embeddings
-        self.mutated_ids = mutated_ids
-        self.mutated_embeddings = mutated_embeddings
-        self.attention_mask = attention_mask
-        self.mutation_mask = mutation_mask
-        self.mutated_perplexity = mutated_perplexity
-        self.input_cls = input_cls
-        self.mutated_cls = mutated_cls
-        self.cls_distance = cls_distance
+    input_ids: typing.Optional[torch.Tensor]=None,
+    input_embeddings: typing.Optional[torch.Tensor]=None,
+    mutated_ids: typing.Optional[torch.Tensor]=None,
+    mutated_embeddings: typing.Optional[torch.Tensor]=None,
+    attention_mask: typing.Optional[torch.Tensor]=None,
+    mutation_mask: typing.Optional[torch.Tensor]=None,
+    mutated_perplexity: typing.Optional[torch.Tensor]=None,
+    input_cls: typing.Optional[torch.Tensor]=None,
+    mutated_cls: typing.Optional[torch.Tensor]=None,
+    cls_distance: typing.Optional[torch.Tensor]=None
     
     @classmethod
     def to_fitness(cls, obj, p_coef=1, d_coef=0, *args, **kwargs):
