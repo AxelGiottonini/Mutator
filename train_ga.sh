@@ -6,7 +6,7 @@
 export CUDA_VISIBLE_DEVICES=0 
 srun python3 train_ga.py \
     --model_name "Mutator" \
-    --model_version "0.2" \
+    --model_version "0.3" \
     --from_tokenizer "Rostlab/prot_bert_bfd" \
     --from_model "Rostlab/prot_bert_bfd" \
     --from_adapters "./models/hps/LR0.001_BS256_P0.05/best/" \
@@ -14,5 +14,6 @@ srun python3 train_ga.py \
     --global_batch_size 128 \
     --local_batch_size 128 \
     --n_epochs 10 \
-    --population_size 4 \
-    --offspring_size 2 \
+    --population_size 100 \
+    --offspring_size 60 \
+    --mutation_rate 0.5

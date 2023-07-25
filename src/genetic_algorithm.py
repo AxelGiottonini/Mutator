@@ -191,6 +191,9 @@ class GeneticAlgorithm():
     def train(self, *args, **kwargs):
         warnings.warn("GeneticAlgorithm support for train method might be removed in future versions", FutureWarning)
 
+    def eval(self, *args, **kwargs):
+        warnings.warn("GeneticAlgorithm support for eval method might be removed in future versions", FutureWarning)
+
     def forward(self, *args, **kwargs):
         return self(*args, **kwargs)
     

@@ -1,4 +1,4 @@
-name: mes2therm
+name: mutator
 
 channels:
   - nvidia
@@ -23,5 +23,3 @@ dependencies:
     - adapter-transformers
     - matplotlib
     - seaborn
-    - evaluate
-    - bert_score

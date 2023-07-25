@@ -53,15 +53,13 @@ def get_dataloaders(args, shuffle=True, return_validation=True, return_tokenizer
     training_set = Dataset(args["training_set"], min_length=args["min_length"], max_length=args["max_length"])
     training_dataloader = DataLoader(dataset=training_set, batch_size=args["local_batch_size"], shuffle=shuffle, num_workers=args["num_workers"], collate_fn=collate_fn)
 
-    validation_set = None
-    validation_dataloader = None
     if return_validation:
         validation_set = Dataset(args["validation_set"], min_length=args["min_length"], max_length=args["max_length"])
         validation_dataloader = DataLoader(dataset=validation_set, batch_size=args["local_batch_size"], shuffle=False, num_workers=args["num_workers"], collate_fn=collate_fn)
 
     out =  (
         training_dataloader,
-        validation_dataloader,
+        validation_dataloader if return_validation else None,
         tokenizer if return_tokenizer else None,
         collate_fn if return_collate_fn else None
     ) 
