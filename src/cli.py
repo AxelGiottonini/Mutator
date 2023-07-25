@@ -46,6 +46,7 @@ def __parse_args__():
     parser.add_argument("--d_coef", type=float, default=1.0)
 
     parser.add_argument("--save_each", type=int, default=10)
+
     args = vars(parser.parse_args())
 
     betas = args["betas"][1:-1].replace(" ", "").split(",")
@@ -86,18 +87,19 @@ def __save_args__(model_dir, model_name, model_version, args):
     with open(os.path.join(model_dir, model_name, model_version, "args.json"), 'w', encoding='utf8') as f:
         f.write(json.dumps(args, indent=4, sort_keys=False, separators=(',', ': '), ensure_ascii=False))
 
-def configure():
+def configure(training=True):
     args = __parse_args__()
-    __safe_makedirs__(args["model_dir"], args["model_name"], args["model_version"])
-    __safe_logging__(args["log_dir"], args["model_name"], args["model_version"])
-    __save_args__(args["model_dir"], args["model_name"], args["model_version"], args)
+    if training:
+        __safe_makedirs__(args["model_dir"], args["model_name"], args["model_version"])
+        __safe_logging__(args["log_dir"], args["model_name"], args["model_version"])
+        __save_args__(args["model_dir"], args["model_name"], args["model_version"], args)
     return args
 
 def summary(model, training_dataloader, validation_dataloader):
     n_total_params = sum(p.numel() for p in model.parameters())
     n_train_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    len_training_dataloader = len(training_dataloader) if training_dataloader is not None else 0
-    len_validation_dataloader = len(validation_dataloader) if validation_dataloader is not None else 0
+    len_training_dataloader = len(training_dataloader.dataset) if training_dataloader is not None else 0
+    len_validation_dataloader = len(validation_dataloader.dataset) if validation_dataloader is not None else 0
     logging.info(
         f"\n"
         f"Parameters:\n" +
