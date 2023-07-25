@@ -6,7 +6,7 @@ if __name__ == "__main__":
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     precision = torch.bfloat16
 
-    args = configure()
+    args = configure(training=False)
 
     model = get_model(args)
     model.to(device).to(precision)
