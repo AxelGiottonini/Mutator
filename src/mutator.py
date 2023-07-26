@@ -51,6 +51,12 @@ class MutatorBase():
         if self.n_mutations is None:
             raise RuntimeError("Mutator k is undefined, please define the number of mutations using Mutator.set_k(k).")
 
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+    
+    def to(self, *args, **kwargs):
+        return self
+
     @no_grad
     def forward(
         self, 
@@ -69,7 +75,7 @@ class MutatorBase():
             if input_embeddings is None:
                 if input_ids is None:
                     raise ValueError("Specify either input_embeddings either input_ids")
-                input_embeddings = Mutator.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True).hidden_states[-1]
+                input_embeddings = self.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True).hidden_states[-1]
 
             if input_cls is None:
                 input_cls = input_embeddings[:,0,:]
@@ -82,23 +88,23 @@ class MutatorBase():
         # Compute the sequences mask from the embeddings
         logits = self.logits_fn(input_ids, input_embeddings, input_cls, attention_mask)
         probs = F.softmax(logits, dim=-1)
-        mutation = Categorical(probs=probs).sample(sample_shape=torch.Size([1, Mutator.n_mutations]))[0,:,:].T
+        mutation = Categorical(probs=probs).sample(sample_shape=torch.Size([1, self.n_mutations]))[0,:,:].T
         mutation_mask = (F.one_hot(mutation, num_classes=logits.shape[-1]).sum(axis=1) > 0).long()
 
         # Mask the input the input ids using the mutations mask
-        masked_input_ids = ((1-mutation_mask)*input_ids) + (mutation_mask*Mutator.tokenizer.mask_token_id)
+        masked_input_ids = ((1-mutation_mask)*input_ids) + (mutation_mask*self.tokenizer.mask_token_id)
 
         # Predict the masked ids
-        out = Mutator.model(input_ids=masked_input_ids, attention_mask=attention_mask)
-        top_k_ids = (-out.logits).argsort(dim=-1)[:,:,:Mutator.k]
+        out = self.model(input_ids=masked_input_ids, attention_mask=attention_mask)
+        top_k_ids = (-out.logits).argsort(dim=-1)[:,:,:self.k]
         is_in_top_k_ids = ((input_ids[:,:,None] - top_k_ids == 0).sum(axis=-1) > 0).long()
         mutated_ids = (1-mutation_mask)*input_ids + mutation_mask*(is_in_top_k_ids*input_ids + (1-is_in_top_k_ids)*top_k_ids[:,:,0])
         
         # Compute the mutated sequence pseudo-perplexity
-        out = Mutator.model(input_ids=mutated_ids, attention_mask=attention_mask, output_hidden_states=True)
+        out = self.model(input_ids=mutated_ids, attention_mask=attention_mask, output_hidden_states=True)
         mutated_embeddings = out.hidden_states[-1]
         mutated_perplexity = perplexity(
-            model=Mutator.model, 
+            model=self.model, 
             input_ids=input_ids,
             logits=out.logits,
             attention_mask=attention_mask
@@ -148,7 +154,7 @@ class MutatorBase():
     def set_k(cls, k: int):
         cls.k = k
 
-class Mutator(MutatorBase, GeneticModel):
+class Mutator(GeneticModel, MutatorBase):
     model = None
     tokenizer = None
     n_mutations = None

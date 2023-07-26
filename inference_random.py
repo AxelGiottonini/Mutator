@@ -11,7 +11,7 @@ if __name__ == "__main__":
     model = get_model(args)
     model.to(device).to(precision)
     dataloader, tokenizer = get_dataloaders(args, shuffle=False, return_validation=False, return_tokenizer=True)
-    mutator = get_mutator(args, model, tokenizer)
+    mutator = get_mutator(args, model, tokenizer, random=True)
     mutator.to(device).to(precision)
 
     results = {
@@ -24,6 +24,9 @@ if __name__ == "__main__":
         batch = batch.to(device)
 
         out = mutator(input_ids=batch.input_ids, attention_mask=batch.attention_mask)
+        for _ in range(args["n_iter"]-1):
+            out = mutator(mutator_output=out)
+
         perplexity_src = perplexity(model, batch.input_ids, attention_mask=batch.attention_mask)
         perplexity_mut = perplexity(model, out.mutated_ids, attention_mask=out.attention_mask)
         sequences_mut = tokenizer.batch_decode(out.mutated_ids, skip_special_tokens=True)

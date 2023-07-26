@@ -45,6 +45,8 @@ def __parse_args__():
     parser.add_argument("--p_coef", type=float, default=1.0)
     parser.add_argument("--d_coef", type=float, default=1.0)
 
+    parser.add_argument("--n_iter", type=int, default=1)
+
     parser.add_argument("--save_each", type=int, default=10)
 
     args = vars(parser.parse_args())
