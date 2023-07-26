@@ -35,29 +35,21 @@ class MutatorOutput():
         cls_distance = obj.cls_distance.mean()
         return p_coef * mutated_perplexity + d_coef * cls_distance
 
-class Mutator(GeneticModel):
+class MutatorBase():
     model = None
     tokenizer = None
     n_mutations = None
     k = None
 
-    def __init__(self, *args:typing.Any, **kwargs:typing.Any):
-        super().__init__()
-
-        if Mutator.model is None:
+    def __init__(self):
+        if self.model is None:
             raise RuntimeError("Mutator model is undefined, please define a model using Mutator.set_model(model).")
-        if Mutator.tokenizer is None:
+        if self.tokenizer is None:
             raise RuntimeError("Mutator tokenizer is undefined, please define a tokenizer using Mutator.set_tokenizer(tokenizer).")
-        if Mutator.n_mutations is None:
+        if self.n_mutations is None:
             raise RuntimeError("Mutator n_mutations is undefined, please define the number of mutations using Mutator.set_n_mutations(n).")
-        if Mutator.n_mutations is None:
+        if self.n_mutations is None:
             raise RuntimeError("Mutator k is undefined, please define the number of mutations using Mutator.set_k(k).")
-        
-        self.classifier = nn.Sequential(
-            nn.Linear(Mutator.model.config.hidden_size, Mutator.model.config.hidden_size, bias=False),
-            nn.ReLU(),
-            nn.Linear(Mutator.model.config.hidden_size, 1, bias=False)
-        )
 
     @no_grad
     def forward(
@@ -77,20 +69,18 @@ class Mutator(GeneticModel):
             if input_embeddings is None:
                 if input_ids is None:
                     raise ValueError("Specify either input_embeddings either input_ids")
-                embeddings = Mutator.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True).hidden_states[-1]
+                input_embeddings = Mutator.model(input_ids=input_ids, attention_mask=attention_mask, output_hidden_states=True).hidden_states[-1]
 
             if input_cls is None:
-                input_cls = embeddings[:,0,:]
+                input_cls = input_embeddings[:,0,:]
         else:
             input_ids = mutator_output.mutated_ids
             input_embeddings = mutator_output.mutated_embeddings
             input_cls = mutator_output.input_cls
             attention_mask = mutator_output.attention_mask
 
-
         # Compute the sequences mask from the embeddings
-        logits = self.classifier(embeddings)[:,:,0]
-        logits = attention_mask * logits + (1-attention_mask) * -1e6
+        logits = self.logits_fn(input_ids, input_embeddings, input_cls, attention_mask)
         probs = F.softmax(logits, dim=-1)
         mutation = Categorical(probs=probs).sample(sample_shape=torch.Size([1, Mutator.n_mutations]))[0,:,:].T
         mutation_mask = (F.one_hot(mutation, num_classes=logits.shape[-1]).sum(axis=1) > 0).long()
@@ -132,6 +122,9 @@ class Mutator(GeneticModel):
         )
         return out
 
+    def logits_fn(self, input_ids, input_embeddings, input_cls, attention_mask):
+        raise NotImplementedError()
+
     @classmethod
     def configure(cls, model, tokenizer, n_mutations, k, mutation_rate):
         cls.set_model(model)
@@ -155,3 +148,32 @@ class Mutator(GeneticModel):
     @classmethod
     def set_k(cls, k: int):
         cls.k = k
+
+class Mutator(MutatorBase, GeneticModel):
+    model = None
+    tokenizer = None
+    n_mutations = None
+    k = None
+
+    def __init__(self, *args:typing.Any, **kwargs:typing.Any):
+        super(MutatorBase, self).__init__()
+        super(GeneticModel, self).__init__()
+        
+        self.classifier = nn.Sequential(
+            nn.Linear(Mutator.model.config.hidden_size, Mutator.model.config.hidden_size, bias=False),
+            nn.ReLU(),
+            nn.Linear(Mutator.model.config.hidden_size, 1, bias=False)
+        )
+
+    def logits_fn(self, input_ids, input_embeddings, input_cls, attention_mask):
+        logits = self.classifier(input_embeddings)[:,:,0]
+        logits = attention_mask * logits + (1-attention_mask) * -1e6
+        return logits
+
+class MutatorRandom(MutatorBase):
+    def __init__(self, *args:typing.Any, **kwargs:typing.Any):
+        super(MutatorBase, self).__init__()
+
+    def logits_fn(self, input_ids, input_embeddings, input_cls, attention_mask):
+        logits = attention_mask + (1-attention_mask) * -1e6
+        return logits
