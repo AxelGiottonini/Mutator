@@ -126,12 +126,11 @@ class MutatorBase():
         raise NotImplementedError()
 
     @classmethod
-    def configure(cls, model, tokenizer, n_mutations, k, mutation_rate):
+    def configure(cls, model, tokenizer, n_mutations, k):
         cls.set_model(model)
         cls.set_tokenizer(tokenizer)
         cls.set_n_mutations(n_mutations)
         cls.set_k(k)
-        cls.set_mutation_rate(mutation_rate)
 
     @classmethod
     def set_model(cls, model:AutoModelForMaskedLM):
@@ -154,6 +153,11 @@ class Mutator(MutatorBase, GeneticModel):
     tokenizer = None
     n_mutations = None
     k = None
+
+    @classmethod
+    def configure(cls, model, tokenizer, n_mutations, k, mutation_rate):
+        super().configure(model, tokenizer, n_mutations, k)
+        cls.set_mutation_rate(mutation_rate)
 
     def __init__(self, *args:typing.Any, **kwargs:typing.Any):
         super(MutatorBase, self).__init__()
