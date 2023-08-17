@@ -11,8 +11,8 @@ def __parse_args__():
     parser.add_argument("--model_dir", type=str, default="./models")
     parser.add_argument("--log_dir", type=str, default="./logs")
 
-    parser.add_argument("--model_name", type=str, required=True, help="Model name")
-    parser.add_argument("--model_version", type=str, required=True, help="Movel version")
+    parser.add_argument("--model_name", type=str, help="Model name")
+    parser.add_argument("--model_version", type=str, help="Movel version")
 
     parser.add_argument("--from_tokenizer", type=str, default="Rostlab/prot_bert_bfd", help="Path or Huggingface's repository of the model's tokenizer")
     parser.add_argument("--from_model", type=str, default="Rostlab/prot_bert_bfd", help="Path to repository containing the model's encoder and decoder")
@@ -46,6 +46,8 @@ def __parse_args__():
     parser.add_argument("--d_coef", type=float, default=1.0)
 
     parser.add_argument("--n_iter", type=int, default=1)
+
+    parser.add_argument("--output", type=str, default=None)
 
     parser.add_argument("--save_each", type=int, default=10)
 

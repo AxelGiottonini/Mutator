@@ -51,12 +51,6 @@ class MutatorBase():
         if self.n_mutations is None:
             raise RuntimeError("Mutator k is undefined, please define the number of mutations using Mutator.set_k(k).")
 
-    def __call__(self, *args, **kwargs):
-        return self.forward(*args, **kwargs)
-    
-    def to(self, *args, **kwargs):
-        return self
-
     @no_grad
     def forward(
         self, 
@@ -154,7 +148,7 @@ class MutatorBase():
     def set_k(cls, k: int):
         cls.k = k
 
-class Mutator(GeneticModel, MutatorBase):
+class Mutator(MutatorBase, GeneticModel):
     model = None
     tokenizer = None
     n_mutations = None
@@ -183,6 +177,12 @@ class Mutator(GeneticModel, MutatorBase):
 class MutatorRandom(MutatorBase):
     def __init__(self, *args:typing.Any, **kwargs:typing.Any):
         super(MutatorBase, self).__init__()
+
+    def __call__(self, *args, **kwargs):
+        return self.forward(*args, **kwargs)
+
+    def to(self, *args, **kwargs):
+        return self
 
     def logits_fn(self, input_ids, input_embeddings, input_cls, attention_mask):
         logits = attention_mask + (1-attention_mask) * -1e6

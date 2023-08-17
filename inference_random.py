@@ -37,4 +37,4 @@ if __name__ == "__main__":
         results["sequences_mut"].extend(sequences_mut)
 
     results = pd.DataFrame(results)
-    results.to_csv("results.csv", index=None)
+    results.to_csv(args["output"], index=None)
