@@ -11,7 +11,7 @@ import torch.nn as nn
 
 import torch
 
-from .cli import summary
+from cli import summary
 
 __all__ = ["no_grad", "train_loop"]
 

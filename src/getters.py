@@ -4,9 +4,9 @@ from torch.utils.data import DataLoader
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 from transformers.adapters import PfeifferInvConfig
 
-from .dataset import Dataset
-from .mutator import Mutator, MutatorRandom
-from .tokenizer import __get_collate_fn__
+from dataset import Dataset
+from mutator import Mutator, MutatorRandom
+from tokenizer import __get_collate_fn__
 
 __all__ = ["get_model", "get_dataloaders", "get_mutator"]
 
