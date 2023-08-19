@@ -5,8 +5,6 @@ import torch.nn.functional as F
 
 from utils import no_grad
 
-__all__ = ["perplexity"]
-
 @no_grad
 def perplexity(
     model: nn.Module,

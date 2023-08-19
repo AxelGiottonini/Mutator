@@ -10,7 +10,7 @@ from torch.distributions.categorical import Categorical
 from transformers import AutoTokenizer, AutoModelForMaskedLM
 
 from genetic_algorithm import GeneticModel
-from statistics import perplexity
+from perplexity import perplexity
 from utils import no_grad
 
 @dataclass
