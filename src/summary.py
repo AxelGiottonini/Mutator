@@ -169,7 +169,7 @@ class PerplexityStatsOutput():
     @classmethod
     def from_file(cls, file_name):
         df = pd.read_csv(file_name)
-        return cls(df["perplexity_src"], df["perplexity_mut"])
+        return cls(df["perplexity_mut"], df["perplexity_src"])
 
 class PerplexityStatsOutputList(UserList):
     @property
@@ -459,7 +459,7 @@ class ComparativePerplexityOutput():
 
     @property
     def d_perplexity_distribution(self):
-        g = sns.displot(self.df, x="d_perplexity", kind="kde", fill=True)
+        g = sns.displot(self.df, x="d_perplexity", hue="hue", kind="kde", fill=True)
         tmpfile = BytesIO()
         plt.xlim(-2.5, 2.5)
         plt.ylim(0, 2)
@@ -505,7 +505,6 @@ class ComparativePerplexityOutput():
                 with a.div(klass="col"):
                     with a.h5(): a("Perplexity distributions")
                     a.img(src=f"data:image/png;base64,{self.perplexity_distributions}", alt="", klass="img-fluid")
-
 
 class ComparativePerplexityOutputList(UserList):
     def to_html(self, a):

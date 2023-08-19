@@ -8,4 +8,3 @@ slurm-*.out
 logs/
 models/
 __pycache__
-html
