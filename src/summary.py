@@ -1,31 +1,23 @@
 import sys
 import os
-
 import typing
 from typing import List, Tuple, Optional, Union
 from dataclasses import dataclass
 from collections import UserList
 from functools import cache, cached_property
-
 import glob
 import re
 import base64
 from io import BytesIO
-
 import pandas as pd
 import numpy as np
 import scipy as sp
 import torch
-
 from transformers import AutoModelForMaskedLM
-
 import matplotlib.pyplot as plt
 import seaborn as sns
-
 from airium import Airium
-
 import tqdm
-
 from perplexity import perplexity
 from getters import get_model, get_dataloaders
 
@@ -38,13 +30,155 @@ def _prune_dict(d: dict) -> dict:
     return {k: v for k, v in d.items() if v is not None}
 
 @dataclass
-class InferenceAttributes():
-    n_iter: int=0
-    top_k_sampling: int=3
-    model_selection: str=None
+class BertAttributes():
     learning_rate: float=None
     batch_size: int=None
     mask_rate: float=None
+    model_selection: str=None
+
+    def __hash__(self) -> int:
+        return hash((
+            self.learning_rate,
+            self.batch_size,
+            self.masking_rate,
+            self.model_selection
+        ))
+
+    @cached_property
+    def dataframe(self):
+        return pd.DataFrame({
+            "Masking rate": [self.mask_rate],
+            "Model selection": [self.model_selection],
+            "Learning rate": [self.learning_rate],
+            "Batch size": [self.batch_size]
+        })
+
+    def to_html(self, a: Airium) -> None:
+        with a.ul(klss="list-group list-group-flush"):
+            with a.li(klass="list_group-item"): a(f"Model selection: {self.model_selection}")
+            with a.li(klass="list_group-item"): a(f"Learning rate: {self.learning_rate}")
+            with a.li(klass="list_group-item"): a(f"Batch size: {self.batch_size}")
+            with a.li(klass="list_group-item"): a(f"Mask rate: {self.mask_rate}")
+
+    def get_output_file_name(
+        self,
+        name: str,
+        out_dir: Union[str, os.PathLike]="",
+        attributes_order: List[str]=[
+            "mask_rate",
+            "model_selection",
+            "learning_rate",
+            "batch_size"]
+    ):
+        return os.path.join(
+            out_dir,
+            *[str(self.__getattribute__(attribute)) for attribute in attributes_order],
+            name
+        )
+
+    @classmethod
+    def from_file_name(
+        cls,
+        file_name: Union[str, os.PathLike],
+        pattern: str = r"(.*\/)?LR(?P<learning_rate>[\d.]*)_BS(?P<batch_size>[\d.]*)_P(?P<mask_rate>[\d.]*)" + \
+                       r"\/(?P<model_selection>(best)|(final)|(validation))"
+    ):
+        attributes = _prune_dict(re.match(pattern, file_name).groupdict())
+        if attributes["model_selection"] == "best": attributes["model_selection"] = "validation"
+        return cls(**attributes)
+
+class BertAttributesList(UserList):
+    def __hash__(self) -> int:
+        return hash(tuple(hash(el) for el in self))
+    
+    @cached_property
+    def model_selection(self) -> List[str]:
+        return [el.model_selection for el in self]
+
+    @cached_property
+    def learning_rate(self) -> List[float]:
+        return [el.learning_rate for el in self]
+
+    @cached_property
+    def batch_size(self) -> List[int]:
+        return [el.batch_size for el in self]
+
+    @cached_property
+    def mask_rate(self) -> List[float]:
+        return [el.mask_rate for el in self]
+    
+    @cached_property
+    def dataframe(self) -> pd.DataFrame:
+        dataframe = pd.DataFrame({
+            "Mask rate": self.mask_rate,
+            "Model selection": self.model_selection,
+            "Learning rate": self.learning_rate,
+            "Batch size": self.batch_size,
+        })
+        dataframe = dataframe.astype({
+            "Mask rate":float,
+            "Model selection":str,
+            "Learning rate":float,
+            "Batch size":int,
+        })
+        return dataframe
+    
+    #@cache
+    def repeated_dataframe(self, n_repeats:int=2):
+        dataframe = pd.DataFrame({
+            "Mask rate": [el for el in self.mask_rate for _ in range(n_repeats)],
+            "Model selection": [el for el in self.model_selection for _ in range(n_repeats)],
+            "Learning rate": [el for el in self.learning_rate for _ in range(n_repeats)],
+            "Batch size": [el for el in self.batch_size for _ in range(n_repeats)]
+        })
+        dataframe = dataframe.astype({
+            "Mask rate":float,
+            "Model selection":str,
+            "Learning rate":float,
+            "Batch size":int,
+        })
+        return dataframe
+    
+    def get_output_file_names(
+        self,
+        name: str,
+        out_dir: Union[str, os.PathLike]="",
+        attributes_order: List[str]=[
+            "mask_rate",
+            "model_selection",
+            "learning_rate",
+            "batch_size"]
+    ):
+        return [el.get_output_file_name(name, out_dir, attributes_order) for el in self]
+    
+    @classmethod
+    def from_file_names(
+        cls,
+        file_names: List[Union[str, os.PathLike]],
+        pattern: str = r"(.*\/)?LR(?P<learning_rate>[\d.]*)_BS(?P<batch_size>[\d.]*)_P(?P<mask_rate>[\d.]*)" + \
+                       r"\/(?P<model_selection>(best)|(final)|(validation))"
+    ):
+        if not isinstance(file_names, typing.Iterable):
+            file_names = [file_names]
+    
+        bert_inference_attributes_list = cls()    
+        for el in file_names:
+            bert_inference_attributes_list.append(BertAttributes.from_file_name(el, pattern))
+
+        return bert_inference_attributes_list
+
+    @classmethod
+    def from_adapters(cls, *args, **kwargs):
+        return cls.from_file_names(*args, **kwargs)
+    
+@dataclass
+class InferenceAttributes():
+    n_iter: str="0"
+    top_k_sampling: str="3"
+    model_selection: str=None
+    learning_rate: str=None
+    batch_size: str=None
+    mask_rate: str=None
 
     def __hash__(self) -> int:
         return hash((
@@ -66,6 +200,24 @@ class InferenceAttributes():
                 with a.li(klass="list_group-item"): a(f"Random inference with {self.n_iter} iterations")
             with a.li(klass="list_group-item"): a(f"Top K Sampling: {self.top_k_sampling}")
 
+    def get_output_file_name(
+        self,
+        name: str,
+        out_dir: Union[str, os.PathLike]="",
+        attributes_order: List[str]=[
+            "mask_rate",
+            "model_selection",
+            "learning_rate",
+            "batch_size",
+            "n_iter",
+            "top_k_sampling"]
+    ):
+        return os.path.join(
+            out_dir,
+            *[str(self.__getattribute__(attribute)) for attribute in attributes_order],
+            name
+        )
+
     @classmethod
     def from_file_name(
         cls,
@@ -77,16 +229,15 @@ class InferenceAttributes():
         return cls(**_prune_dict(re.match(pattern, file_name).groupdict()))
 
 class InferenceAttributesList(UserList):
-
     def __hash__(self) -> int:
         return hash(tuple(hash(el) for el in self))
 
     @cached_property
-    def n_iter(self) -> List[int]:
+    def n_iter(self) -> List[str]:
         return [el.n_iter for el in self]
 
     @cached_property
-    def top_k_sampling(self) -> List[int]:
+    def top_k_sampling(self) -> List[str]:
         return [el.top_k_sampling for el in self]
 
     @cached_property
@@ -94,36 +245,74 @@ class InferenceAttributesList(UserList):
         return [el.model_selection for el in self]
 
     @cached_property
-    def learning_rate(self) -> List[float]:
+    def learning_rate(self) -> List[str]:
         return [el.learning_rate for el in self]
 
     @cached_property
-    def batch_size(self) -> List[int]:
+    def batch_size(self) -> List[str]:
         return [el.batch_size for el in self]
 
     @cached_property
-    def mask_rate(self) -> List[float]:
+    def mask_rate(self) -> List[str]:
         return [el.mask_rate for el in self]
 
     @cached_property
-    def dataframe(self) -> pd.DataFrame:
-        dataframe = pd.DataFrame({
+    def _dataframe(self) -> pd.DataFrame:
+        return pd.DataFrame({
+            "Mask rate": self.mask_rate,
             "Model selection": self.model_selection,
             "Learning rate": self.learning_rate,
             "Batch size": self.batch_size,
-            "Mask rate": self.mask_rate,
             "N. iterations": self.n_iter,
             "Top K Sampling": self.top_k_sampling
         })
-        dataframe = dataframe.astype({
+
+    @cached_property
+    def dataframe(self) -> pd.DataFrame:
+        return self._dataframe.astype({
+            "Mask rate":float,
             "Model selection":str,
             "Learning rate":float,
             "Batch size":int,
-            "Mask rate":float,
             "N. iterations":int,
             "Top K Sampling": int
         })
-        return dataframe
+
+    def get_levels(
+        self,
+        attributes_order: List[str]=[
+            "Mask rate",
+            "Model selection",
+            "Learning rate",
+            "Batch size",
+            "N. iterations",
+            "Top K Sampling"]
+    ) -> List[int]:
+        levels = []
+        for i in range(len(attributes_order) - 1):
+            levels.append(
+                self._dataframe.groupby(attributes_order[0:i+1]).groups
+            )
+        levels = {k:v.to_list() for level in levels for k, v in level.items()}
+        return levels
+
+    def get_output_file_names(
+        self,
+        name: str,
+        out_dir: Union[str, os.PathLike]="",
+        attributes_order: List[str]=[
+            "mask_rate",
+            "model_selection",
+            "learning_rate",
+            "batch_size",
+            "n_iter",
+            "top_k_sampling"
+        ],
+        skip=None
+    ):
+        if isinstance(skip, int):
+            attributes_order = attributes_order[skip:]
+        return [el.get_output_file_name(name, out_dir, attributes_order) for el in self]
 
 @dataclass
 class PerplexityStatsOutput():
@@ -280,7 +469,7 @@ class PerplexityStatsOutputList(UserList):
                     with a.th(scope="col"): a("Q3 &#916;Perplexity")
                     with a.th(scope="col"): a("PCC")
             with a.tbody():
-                for i, (_, row) in enumerate(self.join_attributes(attributes_list).iterrows()):
+                for i, (_, row) in enumerate(dataframe.iterrows()):
                     with a.tr():
                         with a.th(scope="col"):
                             with a.a(href=f"{links[i]}"): a(f"{i}")
@@ -292,8 +481,8 @@ class PerplexityStatsOutputList(UserList):
                         with a.td(scope="col"): a(f"{row['Top K Sampling']}")
                         with a.td(scope="col"): a(f"{row['Mean &#916;Perplexity']:.3f}")
                         with a.td(scope="col"): a(f"{row['Q1 &#916;Perplexity']:.3f}")
-                        with a.td(scope="col"): a(f"{row['Q1 &#916;Perplexity']:.3f}")
-                        with a.td(scope="col"): a(f"{row['Q1 &#916;Perplexity']:.3f}")
+                        with a.td(scope="col"): a(f"{row['Q2 &#916;Perplexity']:.3f}")
+                        with a.td(scope="col"): a(f"{row['Q3 &#916;Perplexity']:.3f}")
                         with a.td(scope="col"): a(f"{row['PCC']:.3f}")
 
     def to_latex(
@@ -305,6 +494,16 @@ class PerplexityStatsOutputList(UserList):
         **kwargs: Optional[typing.Any]
     ) -> str:
         dataframe = self.join_attributes(attributes_list)
+        dataframe = dataframe.rename(
+            {
+                "Mean &#916;Perplexity": "$\Bar{\Delta_\text{mes,mut}}$",
+                "Q1 &#916;Perplexity": "$\Delta_\text{mes,mut}_0.25$",
+                "Q2 &#916;Perplexity": "$\Delta_\text{mes,mut}_0.50$",
+                "Q3 &#916;Perplexity": "$\Delta_\text{mes,mut}_0.75$",
+                "PCC": "$\rho_\text{mes,mut}$"
+            },
+            axis=1
+        )
         return dataframe.to_latex(index=index, float_format=float_format, *args, **kwargs)
 
 @dataclass
@@ -642,17 +841,33 @@ class ComparativePerplexityOutput():
         _prefix = ["model_perplexity", "d_perplexity"]
         _stats = ["mean", "25%", "50%", "75%"]
         columns = [(a, b) for a in _prefix for b in _stats]
-        description = self.dataframe.groupby("hue").describe().loc[:,columns]
+        description = self.dataframe \
+            .groupby("hue") \
+            .describe() \
+            .loc[:,columns] \
+            .reset_index() \
+            .rename({"index": "Thermophilicity"}, axis=1)
+        description.columns = [
+            "Thermophilicity",
+            "Model Mean",
+            "Model Q1",
+            "Model Q2",
+            "Model Q3",
+            "&#916 Mean",
+            "&#916 Q1",
+            "&#916 Q2",
+            "&#916 Q3"
+        ]
         return description
 
     def to_html(self, a:Airium) -> None:
-        with a.div(klass="container"):
-            with a.h4(): a(self.adapter_name)
+        description = self.description
 
+        with a.div(klass="container"):
             with a.table(klass="table table-sm"):
                 with a.thead():
                     with a.tr():
-                        with a.th(scope="col"): a("#")
+                        with a.th(scope="col"): a("Thermophilicity")
                         with a.th(scope="col"): a("Model Mean")
                         with a.th(scope="col"): a("Model Q1")
                         with a.th(scope="col"): a("Model Q2")
@@ -662,11 +877,17 @@ class ComparativePerplexityOutput():
                         with a.th(scope="col"): a("&#916 Q2")
                         with a.th(scope="col"): a("&#916 Q3")
                 with a.tbody():
-                    for i, row in self.description.iterrows():
+                    for _, row in self.description.iterrows():
                         with a.tr():
-                            with a.th(scope="col"): a(i)
-                            for value in row.values:
-                                with a.td(scope="col"): a(f"{value:.3f}")
+                            with a.th(scope="col"): a(f"{row['Thermophilicity']}")
+                            with a.td(scope="col"): a(f"{row['Model Mean']:.3f}")
+                            with a.td(scope="col"): a(f"{row['Model Q1']:.3f}")
+                            with a.td(scope="col"): a(f"{row['Model Q2']:.3f}")
+                            with a.td(scope="col"): a(f"{row['Model Q3']:.3f}")
+                            with a.td(scope="col"): a(f"{row['&#916 Mean']:.3f}")
+                            with a.td(scope="col"): a(f"{row['&#916 Q1']:.3f}")
+                            with a.td(scope="col"): a(f"{row['&#916 Q2']:.3f}")
+                            with a.td(scope="col"): a(f"{row['&#916 Q3']:.3f}")
 
             with a.div(klass="row d-print-none"):
                 with a.div(klass="col"):
@@ -685,72 +906,91 @@ class ComparativePerplexityOutput():
                         klass="img-fluid"
                     )
 
-    def to_latex(
-        self,
-        as_table: Optional[bool]=False,
-        return_adapter_name: Optional[bool]=True
-    ) -> str:
-        latex_repr = ""
-        if as_table:
-            if return_adapter_name:
-                latex_repr += "\\begin{tabular}{llrrrrrrrr}\n"
-            else:
-                latex_repr += "\\begin{tabular}{lrrrrrrrr}\n"
-            latex_repr += "\t\\toprule\n"
-            temp = "# & Model Mean & Model Q1 & Model Q2 & Model Q3 & " + \
-                   "$\\Delta$ Mean & $\\Delta$ Q1 & $\\Delta$ Q2 & $\\Delta$ Q3"
-            if return_adapter_name:
-                temp = "Adapter Name & " + temp
-            latex_repr += "\t" + temp +  "\\\\\n"
-            latex_repr += "\t\\midrule\n"
-        for i, row in self.description.iterrows():
-            temp = f"{i} &" + " & ".join([f"{value:.3f}" for value in row.values])
-            if return_adapter_name:
-                temp = f"{self.adapter_name} & " + temp
-            latex_repr += "\t" + temp + "\\\\\n"
-        if as_table:
-            latex_repr += "\t\\bottomrule\n"
-            latex_repr += "\\end{tabular}\n"
-
-        if as_table:
-            latex_repr = latex_repr.replace("_", "\_")
-            latex_repr = latex_repr.replace("#", "\#")
-
-        return latex_repr
-
 class ComparativePerplexityOutputList(UserList):
     def __hash__(self) -> int:
         return hash(tuple(hash(el) for el in self))
 
-    def to_html(self, a:Airium) -> None:
-        with a.div(klass="container"):
-            n_items = len(self)
+    @cached_property
+    def description(self) -> pd.DataFrame:
+        return pd.concat([el.description for el in self], axis=0, ignore_index=True)
 
-            for i in range(0, n_items + 1, 2):
-                with a.div(klass="row"):
-                    if i < n_items:
-                        with a.div(klass="col"):
-                            self[i].to_html(a)
-                    if i+1 < n_items:
-                        with a.div(klass="col"):
-                            self[i+1].to_html(a)
+    def join_attributes_to_description(self, attributes_list:BertAttributesList) -> pd.DataFrame:
+        description = pd.concat([attributes_list.repeated_dataframe(), self.description], axis=1)
+        description = description.sort_values([
+            "Mask rate",
+            "Model selection",
+            "Learning rate",
+            "Batch size",
+            "Thermophilicity"
+        ])
+        return description
 
-    def to_latex(self) -> str:
-        latex_repr = ""
-        latex_repr += "\\begin{tabular}{llrrrrrrrr}\n"
-        latex_repr += "\t\\toprule\n"
-        latex_repr += "\tAdapter Name & " + \
-                "# & Model Mean & Model Q1 & Model Q2 & Model Q3 & " + \
-                "$\\Delta$ Mean & $\\Delta$ Q1 & $\\Delta$ Q2 & $\\Delta$ Q3 \\\\\n"
-        latex_repr += "\t\\midrule\n"
+    def to_html(
+        self,
+        a:Airium,
+        attributes_list:BertAttributesList,
+        links: List[Union[str, os.PathLike]],
+        n_repeats:int=2
+    ) -> None:
+        description = self.join_attributes_to_description(attributes_list)
+        links = [link for link in links for _ in range(n_repeats)]
+        links = [links[i] for i in description.index.to_list()]
 
-        for el in self:
-            latex_repr += el.to_latex()
+        with a.table(klass="table table-sm table-striped"):
+            with a.thead():
+                with a.tr():
+                    with a.th(scope="col"): a("#")
+                    with a.th(scope="col"): a("Mask rate")
+                    with a.th(scope="col"): a("Model selection")
+                    with a.th(scope="col"): a("Learning rate")
+                    with a.th(scope="col"): a("Batch size")
+                    with a.th(scope="col"): a("Thermophilicity")
+                    with a.th(scope="col"): a("Model Mean")
+                    with a.th(scope="col"): a("Model Q1")
+                    with a.th(scope="col"): a("Model Q2")
+                    with a.th(scope="col"): a("Model Q3")
+                    with a.th(scope="col"): a("&#916 Mean")
+                    with a.th(scope="col"): a("&#916 Q1")
+                    with a.th(scope="col"): a("&#916 Q2")
+                    with a.th(scope="col"): a("&#916 Q3")
+            with a.tbody():
+                for i, (_, row) in enumerate(description.iterrows()):
+                    with a.tr():
+                        with a.th(scope="col"):
+                            with a.a(href=f"{links[i]}"): a(f"{i}")
+                        with a.td(scope="col"): a(f"{row['Mask rate']}")
+                        with a.td(scope="col"): a(f"{row['Model selection']}")
+                        with a.td(scope="col"): a(f"{row['Learning rate']:.4f}")
+                        with a.td(scope="col"): a(f"{row['Batch size']}")
+                        with a.td(scope="col"): a(f"{row['Thermophilicity']}")
+                        with a.td(scope="col"): a(f"{row['Model Mean']:.3f}")
+                        with a.td(scope="col"): a(f"{row['Model Q1']:.3f}")
+                        with a.td(scope="col"): a(f"{row['Model Q2']:.3f}")
+                        with a.td(scope="col"): a(f"{row['Model Q3']:.3f}")
+                        with a.td(scope="col"): a(f"{row['&#916 Mean']:.3f}")
+                        with a.td(scope="col"): a(f"{row['&#916 Q1']:.3f}")
+                        with a.td(scope="col"): a(f"{row['&#916 Q2']:.3f}")
+                        with a.td(scope="col"): a(f"{row['&#916 Q3']:.3f}")
 
-        latex_repr += "\t\\bottomrule\n"
-        latex_repr += "\\end{tabular}\n"
-
-        return latex_repr
+    def to_latex(
+        self,
+        attributes_list: BertAttributesList,
+        index: Optional[bool]=False,
+        float_format: Optional[typing.Callable]="{:.4f}".format,
+        *args: Optional[typing.Any],
+        **kwargs: Optional[typing.Any]
+    ) -> str:
+        description = self.join_attributes_to_description(attributes_list)
+        description = description.rename(
+            {
+                "&#916 Mean": "$\Bar{\Delta_\text{base,ft}}$",
+                "&#916 Q1": "$\Delta_\text{base,ft}_0.25$",
+                "&#916 Q2": "$\Delta_\text{base,ft}_0.50$",
+                "&#916 Q3": "$\Delta_\text{base,ft}_0.75$",
+            },
+            axis=1
+        )
+        return description.to_latex(index=index, float_format=float_format, *args, **kwargs)
 
     @classmethod
     def from_adapters(
@@ -901,6 +1141,27 @@ def _accordion_item_formatter(
                 content.to_html(a, *args, **kwargs)
 
 @formatter
+def bert_summary_formatter(
+    a: Airium,
+    comparative_perplexity: ComparativePerplexityOutput, 
+    bert_attributes: BertAttributes 
+) -> None:
+    with a.div(klass="container"):
+        with a.div(klass="accordion"):
+            _accordion_item_formatter(
+                a,
+                "bert_attributes",
+                "Bert Attributes",
+                bert_attributes
+            )
+            _accordion_item_formatter(
+                a,
+                "comparative_perplexity",
+                "Comparative Perplexity",
+                comparative_perplexity
+            )
+
+@formatter
 def summary_formatter(
     a: Airium,
     p_stats: PerplexityStatsOutput,
@@ -908,6 +1169,20 @@ def summary_formatter(
     t_stats: ThermophilicityStatsOutput,
     attributes: InferenceAttributes
 ) -> None:
+    with a.ul(klass="nav justify-content-end"):
+        with a.li(klass="nav-item"):
+            with a.a(klass="nav-link", href="/".join([".."]*6) + "/index.html"): a("Index")
+        with a.li(klass="nav-item"):
+            with a.a(klass="nav-link", href="/".join([".."]*5) + "/index.html"): a("Mask rate")
+        with a.li(klass="nav-item"):
+            with a.a(klass="nav-link", href="/".join([".."]*4) + "/index.html"): a("Model selection")
+        with a.li(klass="nav-item"):
+            with a.a(klass="nav-link", href="/".join([".."]*3) + "/index.html"): a("Learning rate")
+        with a.li(klass="nav-item"):
+            with a.a(klass="nav-link", href="/".join([".."]*2) + "/index.html"): a("Batch size")
+        with a.li(klass="nav-item"):
+            with a.a(klass="nav-link", href="/".join([".."]*1) + "/index.html"): a("N. iterations")
+
     with a.div(klass="container"):
         with a.div(klass="accordion"):
             _accordion_item_formatter(
@@ -940,41 +1215,90 @@ def summary_formatter(
 @formatter
 def index_formatter(
     a: Airium,
-    comparative_perplexity_list: ComparativePerplexityOutputList,
-    p_stats_list: PerplexityStatsOutputList,
-    m_stats_list: MutationStatsOutputList,
-    attributes_list: InferenceAttributesList,
-    links: List[Union[str, os.PathLike]]
+    comparative_perplexity_list: ComparativePerplexityOutputList=None,
+    p_stats_list: PerplexityStatsOutputList=None,
+    m_stats_list: MutationStatsOutputList=None,
+    bert_attributes_list: BertAttributesList=None,
+    attributes_list: InferenceAttributesList=None,
+    bert_links: List[Union[str, os.PathLike]]=None,
+    links: List[Union[str, os.PathLike]]=None
 ) -> None:
     with a.div(klass="container"):
         with a.div(klass="accordion"):
-            _accordion_item_formatter(
-                a,
-                "comparative_perplexity",
-                "Comparative Perplexity",
-                comparative_perplexity_list
-            )
-            _accordion_item_formatter(
-                a,
-                "perplexity_stats",
-                "Perplexity Statistics",
-                p_stats_list,
-                attributes_list,
-                links
-            )
-            _accordion_item_formatter(
-                a,
-                "mutations_stats",
-                "Mutation Statistics",
-                m_stats_list
-            )
+            if comparative_perplexity_list is not None:
+                if bert_attributes_list is None:
+                    raise ValueError()
+                if bert_links is None:
+                    raise ValueError()
+
+                _accordion_item_formatter(
+                    a,
+                    "comparative_perplexity",
+                    "Comparative Perplexity",
+                    comparative_perplexity_list,
+                    bert_attributes_list,
+                    bert_links
+                )
+            if p_stats_list is not None:
+                if attributes_list is None:
+                    raise ValueError()
+                if links is None:
+                    raise ValueError()
+
+                _accordion_item_formatter(
+                    a,
+                    "perplexity_stats",
+                    "Perplexity Statistics",
+                    p_stats_list,
+                    attributes_list,
+                    links
+                )
+            if m_stats_list is not None:
+                _accordion_item_formatter(
+                    a,
+                    "mutations_stats",
+                    "Mutation Statistics",
+                    m_stats_list
+                )
+
+def safe_writer(content:str, path: Union[str, os.PathLike]) -> None:
+    dirname = os.path.dirname(path)
+    if not os.path.isdir(dirname):
+        os.makedirs(dirname)
+    with open(path, "w", encoding="UTF-8") as f:
+        f.write(content)
+
+def bert_summary(
+    bert_adapters_template: Union[str, os.PathLike],
+    thermophilics_set: Union[str, os.PathLike],
+    mesophilics_set: Union[str, os.PathLike],
+    out_dir: Optional[Union[str, os.PathLike]]="./html"   
+) -> Tuple[
+        ComparativePerplexityOutputList,
+        BertAttributesList
+    ]:
+    adapters = [el for el in glob.glob(bert_adapters_template) if os.path.isdir(el)]
+    bert_attributes_list = BertAttributesList.from_adapters(adapters)
+    comparative_perplexity_list = ComparativePerplexityOutputList.from_adapters(
+        from_adapters=adapters,
+        thermophilics_set=thermophilics_set,
+        mesophilics_set=mesophilics_set
+    )
+
+    for comparative_perplexity, bert_attributes in zip(comparative_perplexity_list, bert_attributes_list):
+        safe_writer(
+            bert_summary_formatter(comparative_perplexity, bert_attributes),
+            bert_attributes.get_output_file_name("bert_summary.html", out_dir)
+        )
+
+    return comparative_perplexity_list, bert_attributes_list
 
 def summary(
     file_name: Union[str, os.PathLike],
     base_file_name: Union[str, os.PathLike],
-    thermophilicity_stats_file: Optional[Union[str, os.PathLike]]=None
+    thermophilicity_stats_file: Optional[Union[str, os.PathLike]]=None,
+    out_dir="./html"
 ) -> Tuple[
-        str,
         PerplexityStatsOutput,
         MutationStatsOutput,
         ThermophilicityStatsOutput,
@@ -989,9 +1313,12 @@ def summary(
     if thermophilicity_stats_file is not None:
         t_stats = ThermophilicityStatsOutput.from_file(thermophilicity_stats_file)
 
-    html = summary_formatter(p_stats, m_stats, t_stats, attributes)
+    safe_writer(
+        summary_formatter(p_stats, m_stats, t_stats, attributes),
+        attributes.get_output_file_name("summary.html", out_dir)
+    )
 
-    return html, p_stats, m_stats, t_stats, attributes
+    return p_stats, m_stats, t_stats, attributes
 
 def multiple_summary(
     file_name_template: Union[str, os.PathLike],
@@ -1004,7 +1331,6 @@ def multiple_summary(
     if not os.path.isdir(out_dir):
         os.mkdir(out_dir)
 
-    links = []
     attributes_list = InferenceAttributesList()
     p_stats_list = PerplexityStatsOutputList()
     m_stats_list = MutationStatsOutputList()
@@ -1015,43 +1341,75 @@ def multiple_summary(
         if not os.path.isfile(thermophilicity_stats_file):
             thermophilicity_stats_file = None
 
-        html, p_stats, m_stats, t_stats, attributes = summary(
+        p_stats, m_stats, t_stats, attributes = summary(
             file_name,
             base_file_name,
-            thermophilicity_stats_file
+            thermophilicity_stats_file,
+            out_dir
         )
 
-        links.append(os.path.join("./", os.path.basename(file_name)[:-4] + ".html"))
         attributes_list.append(attributes)
         p_stats_list.append(p_stats)
         m_stats_list.append(m_stats)
         t_stats_list.append(t_stats)
 
-        with open(os.path.join(out_dir, os.path.basename(file_name)[:-4] + ".html"), "w") as f:
-            f.write(html)
-
-    comparative_perplexity_list = ComparativePerplexityOutputList.from_adapters(
-        from_adapters=[el for el in glob.glob(bert_adapters_template) if os.path.isdir(el)],
-        thermophilics_set=thermophilics_set,
-        mesophilics_set=mesophilics_set
-    )
-
-    with open(os.path.join(out_dir, "index.html"), "w", encoding='UTF-8') as f:
-        f.write(
-            index_formatter(
-                comparative_perplexity_list,
-                p_stats_list,
-                m_stats_list,
-                attributes_list,
-                links
-            )
+    for level, indices in attributes_list.get_levels().items():
+        attributes_subset = InferenceAttributesList(
+            [attributes_list[i] for i in indices]
+        )
+        p_stats_subset = PerplexityStatsOutputList(
+            [p_stats_list[i] for i in indices]
+        )
+        m_stats_subset = MutationStatsOutputList(
+            [m_stats_list[i] for i in indices]
         )
 
-    with open(os.path.join(out_dir, "comparative_perplexity.tex"), "w", encoding='UTF-8') as f:
-        f.write(comparative_perplexity_list.to_latex())
+        skip = None
+        if isinstance(level, tuple):
+            skip = len(level)
+            level = "/".join([str(el) for el in level])
+        else:
+            skip = 1
+            level = str(level)
 
-    with open(os.path.join(out_dir, "perplexity_statistics.tex"), "w", encoding='UTF-8') as f:
-        f.write(p_stats_list.to_latex(attributes_list))
+        safe_writer(
+            index_formatter(
+                p_stats_list = p_stats_subset,
+                m_stats_list = m_stats_subset,
+                attributes_list = attributes_subset,
+                links = attributes_subset.get_output_file_names("summary.html", skip=skip)
+            ),
+            os.path.join(out_dir, level, "index.html")
+        )
+
+    (comparative_perplexity_list,
+     bert_attributes_list) = bert_summary(bert_adapters_template,
+                                                 thermophilics_set,
+                                                 mesophilics_set,
+                                                 out_dir) 
+
+    safe_writer(
+        index_formatter(
+            comparative_perplexity_list,
+            p_stats_list,
+            m_stats_list,
+            bert_attributes_list,
+            attributes_list,
+            bert_attributes_list.get_output_file_names("bert_summary.html"),
+            attributes_list.get_output_file_names("summary.html")
+        ),
+        os.path.join(out_dir, "index.html")
+    )
+
+    safe_writer(
+        comparative_perplexity_list.to_latex(bert_attributes_list),
+        os.path.join(out_dir, "comparative_perplexity.tex")
+    )
+
+    safe_writer(
+        p_stats_list.to_latex(attributes_list),
+        os.path.join(out_dir, "perplexity_statistics.tex")
+    )
 
 if __name__ == "__main__":
     import warnings
